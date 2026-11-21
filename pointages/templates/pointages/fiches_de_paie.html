@@ -1,0 +1,74 @@
+{% extends "pointages/base.html" %}
+{% load static %}
+{% block titre %}Fiches de paie {{ mois }}{% endblock %}
+{% block contenu %}
+<div class="entete-page no-print">
+  <div>
+    <h1>{% if personne %}Fiche de paie de {{ personne }}{% else %}Fiches de paie{% endif %}</h1>
+    <p class="sous-titre">{{ fiches|length }} fiche(s) · une fiche par page à l'impression</p>
+  </div>
+  <div class="actions">
+    <form class="filtres" method="get"><div><label for="mois">Mois</label><input type="month" id="mois" name="mois" value="{{ mois }}"></div><button class="bouton secondaire">Afficher</button></form>
+    <button class="bouton" id="imprimer" type="button">🖨 Imprimer</button>
+  </div>
+</div>
+
+{% for f in fiches %}
+<article class="fiche-paie">
+  <div class="entete">
+    <div>
+      {% if entreprise.logo %}<img src="{{ entreprise.logo.url }}" alt=""><br>{% endif %}
+      <strong>{{ entreprise.raison_sociale }}</strong><br>
+      <span class="petit">{{ entreprise.adresse }}{% if entreprise.ville %}, {{ entreprise.ville }}{% endif %}<br>
+      {{ entreprise.identifiants }}</span>
+    </div>
+    <div style="text-align:right">
+      <h2>Bulletin de paie</h2>
+      <div>Période du {{ f.debut|date:"d/m/Y" }} au {{ f.fin|date:"d/m/Y" }}</div>
+      <div class="petit">{{ f.debut|date:"F Y"|capfirst }}</div>
+    </div>
+  </div>
+
+  <div class="deux">
+    <dl class="infos">
+      <dt>Employé</dt><dd><strong>{{ f.personne.nom }} {{ f.personne.prenoms }}</strong></dd>
+      <dt>Matricule</dt><dd>{{ f.personne.matricule }}</dd>
+      <dt>CIN</dt><dd>{{ f.personne.cin|default:"—" }}</dd>
+      <dt>N° CNSS</dt><dd>{{ f.personne.cnss|default:"—" }}</dd>
+    </dl>
+    <dl class="infos">
+      <dt>Poste</dt><dd>{{ f.personne.poste|default:"—" }}</dd>
+      <dt>Service</dt><dd>{{ f.personne.service|default:"—" }}</dd>
+      <dt>Date d'entrée</dt><dd>{{ f.personne.date_entree|date:"d/m/Y"|default:"—" }}</dd>
+      <dt>Situation</dt><dd>{{ f.personne.get_situation_familiale_display|default:"—" }}{% if f.personne.enfants %}, {{ f.personne.enfants }} enfant(s){% endif %}</dd>
+    </dl>
+  </div>
+
+  <div class="tableau-wrap"><table>
+    <thead><tr><th>Éléments</th><th class="num">Base</th><th class="num">Taux</th><th class="num">Gains</th><th class="num">Retenues</th></tr></thead>
+    <tbody>
+      <tr><td>Présence : {{ f.bilan.jours }} jour(s) travaillé(s) sur {{ f.jours_ouvres }}, {{ f.bilan.heures_txt }}{% if f.bilan.conges %}, {{ f.bilan.conges }} jour(s) de congé{% endif %}</td><td></td><td></td><td></td><td></td></tr>
+      <tr>
+        <td>Salaire de base ({{ f.personne.get_mode_paie_display|lower }}{% if f.personne.mode_paie == 'M' %}, au prorata des heures{% endif %})</td>
+        <td class="num">{% if f.personne.mode_paie == 'M' %}{{ f.personne.taux|floatformat:"2g" }}{% elif f.personne.mode_paie == 'J' %}{{ f.bilan.jours }} j{% else %}{{ f.bilan.heures_txt }}{% endif %}</td>
+        <td class="num">{% if f.personne.mode_paie != 'M' %}{{ f.personne.taux|floatformat:"2g" }}{% endif %}</td>
+        <td class="num">{{ f.brut|floatformat:"2g" }}</td><td></td>
+      </tr>
+      <tr><td><strong>Salaire brut</strong></td><td></td><td></td><td class="num"><strong>{{ f.brut|floatformat:"2g" }}</strong></td><td></td></tr>
+      {% for r in f.retenues.lignes %}
+      <tr><td>{{ r.libelle }}</td><td class="num">{{ r.base|floatformat:"2g" }}</td><td class="num">{% if r.taux %}{{ r.taux|floatformat:"-2" }} %{% endif %}</td><td></td><td class="num">{{ r.montant|floatformat:"2g" }}</td></tr>
+      {% endfor %}
+    </tbody>
+    <tfoot><tr><td colspan="3">Totaux</td><td class="num">{{ f.brut|floatformat:"2g" }}</td><td class="num">{{ f.retenues.total|floatformat:"2g" }}</td></tr></tfoot>
+  </table></div>
+
+  <div class="net"><span>Net à payer</span><span>{{ f.retenues.net|floatformat:"2g" }} {{ APP.DEVISE }}</span></div>
+  <p class="petit" style="margin-top:8px">Paiement : {% if f.personne.paiement_banque %}virement {{ f.personne.banque }} {{ f.personne.rib }}{% else %}espèces{% endif %}</p>
+  {% if f.retenues.lignes %}<p class="mention">Retenues calculées automatiquement à titre indicatif (CNSS, AMO, IR — barème configuré dans Pointage Max) : à faire valider par votre comptable. Revenu net imposable : {{ f.retenues.imposable|floatformat:"2g" }}, frais professionnels déduits : {{ f.retenues.frais_pro|floatformat:"2g" }}.</p>{% endif %}
+  <div class="signatures"><span>Signature de l'employeur</span><span>Signature de l'employé</span></div>
+</article>
+{% empty %}
+<div class="carte vide">Aucune fiche : personne n'a de salaire pour ce mois.</div>
+{% endfor %}
+{% endblock %}
+{% block scripts %}<script src="{% static 'pointages/imprimer.js' %}"></script>{% endblock %}

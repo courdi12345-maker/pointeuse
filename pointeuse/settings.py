@@ -56,6 +56,21 @@ POINTAGE_MAX = {
     "HEURE_DEBUT": os.environ.get("POINTAGE_HEURE_DEBUT", "08:00"),
     "TOLERANCE_RETARD_MINUTES": int(os.environ.get("POINTAGE_TOLERANCE_RETARD", "10")),
     "DELAI_MIN_MINUTES": 1,  # délai minimum entre une arrivée et une sortie
+    "SAUVEGARDES_DIR": os.environ.get("POINTAGE_SAUVEGARDES_DIR", str(BASE_DIR / "sauvegardes")),
+    "SAUVEGARDES_A_GARDER": int(os.environ.get("POINTAGE_SAUVEGARDES_A_GARDER", "30")),
+    # Fiche de paie : retenues salariales (Maroc, barème 2025). Montants INDICATIFS : faites-les valider
+    # par votre comptable et mettez ces valeurs à jour à chaque loi de finances.
+    "PAIE": {
+        "CNSS_TAUX": 0.0448, "CNSS_PLAFOND_MENSUEL": 6000,
+        "AMO_TAUX": 0.0226,
+        "FRAIS_PRO_SEUIL_ANNUEL": 78000, "FRAIS_PRO_TAUX_BAS": 0.35, "FRAIS_PRO_TAUX_HAUT": 0.25,
+        "FRAIS_PRO_PLAFOND_ANNUEL": 35000,
+        # (jusqu'à ce revenu net imposable annuel, taux, somme à déduire)
+        "IR_BAREME_ANNUEL": [(40000, 0, 0), (60000, 0.10, 4000), (80000, 0.20, 10000),
+                             (100000, 0.30, 18000), (180000, 0.34, 22000), (None, 0.37, 27400)],
+        "IR_DEDUCTION_PAR_PERSONNE_ANNUELLE": 500, "IR_PERSONNES_MAX": 6,
+        "ACTIVE": os.environ.get("POINTAGE_RETENUES", "1") == "1",
+    },
 }
 
 

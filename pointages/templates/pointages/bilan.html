@@ -7,6 +7,7 @@
     <p class="sous-titre">Du {{ b.debut|date:"d/m/Y" }} au {{ b.fin|date:"d/m/Y" }} · {{ b.jours_ouvres }} jours ouvrés · base {{ APP.HEURES_MENSUELLES|floatformat:"-2" }} h/mois</p>
   </div>
   <div class="actions no-print">
+    <a class="bouton secondaire" href="{% url 'fiches_de_paie' %}?{{ query }}">🧾 Fiches de paie</a>
     <a class="bouton secondaire" href="?{{ query }}&format=xlsx">⬇ Excel</a>
     <a class="bouton secondaire" href="?{{ query }}&format=csv">⬇ CSV</a>
     <button class="bouton" id="imprimer" type="button">🖨 Imprimer</button>
@@ -50,7 +51,7 @@
         <td class="num">{{ l.conges }}</td>
         <td class="num">{% if l.absences %}<span class="etat orange">{{ l.absences }}</span>{% else %}0{% endif %}</td>
         <td class="num">{{ l.theorique|floatformat:"2g" }}</td>
-        <td class="num"><strong>{{ l.reel|floatformat:"2g" }}</strong></td>
+        <td class="num"><a href="{% url 'fiche_de_paie' l.personne.pk %}?mois={{ mois }}" title="Fiche de paie"><strong>{{ l.reel|floatformat:"2g" }}</strong></a></td>
       </tr>
     {% empty %}
       <tr><td colspan="11" class="vide">Aucun employé pour ces critères.</td></tr>

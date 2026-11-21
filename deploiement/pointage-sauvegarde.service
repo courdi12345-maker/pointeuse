@@ -1,0 +1,8 @@
+[Unit]
+Description=Pointage Max - sauvegarde automatique
+
+[Service]
+Type=oneshot
+User=@UTILISATEUR@
+WorkingDirectory=@DOSSIER@
+ExecStart=@DOSSIER@/venv/bin/python manage.py sauvegarder --motif auto

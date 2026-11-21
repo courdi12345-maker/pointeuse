@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from django import forms
 from django.utils import timezone
 
-from .models import Conge, Personne, Service, Ville, jours_ouvres
+from .models import Conge, Entreprise, Personne, Service, Ville, jours_ouvres
 
 
 class DateInput(forms.DateInput):
@@ -185,3 +185,14 @@ class UtilisateurForm(forms.Form):
                 raise forms.ValidationError("Vous ne pouvez pas retirer vos propres droits d'administrateur "
                                             "ni désactiver votre propre compte.")
         return data
+
+
+class EntrepriseForm(forms.ModelForm):
+    class Meta:
+        model = Entreprise
+        fields = ["raison_sociale", "adresse", "ville", "telephone", "email", "ice", "rc",
+                  "identifiant_fiscal", "cnss", "logo"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["logo"].widget.attrs["accept"] = "image/*"

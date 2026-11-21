@@ -312,3 +312,121 @@ class UtilisateursTests(Base):
         self.assertContains(r, "pas identiques")
         r = self.client.post(reverse("utilisateur_modifier", args=[self.admin.pk]), {"username": "admin", "role": "pointeur"})
         self.assertContains(r, "propres droits")
+
+
+import shutil
+import tempfile
+import zipfile
+from pathlib import Path
+
+from django.test import TransactionTestCase
+
+
+class SauvegardesTests(TransactionTestCase):
+    """TransactionTestCase : la sauvegarde lit la vraie base SQLite de test (fichier)."""
+
+    def setUp(self):
+        from django.conf import settings
+        self.tmp = Path(tempfile.mkdtemp())
+        self.media = self.tmp / "media"
+        (self.media / "photos").mkdir(parents=True)
+        (self.media / "photos" / "a.jpg").write_bytes(b"photo")
+        self.cfg = dict(settings.POINTAGE_MAX, SAUVEGARDES_DIR=str(self.tmp / "sauvegardes"), SAUVEGARDES_A_GARDER=3)
+        self.over = self.settings(POINTAGE_MAX=self.cfg, MEDIA_ROOT=str(self.media))
+        self.over.enable()
+        from django.contrib.auth.models import User
+        self.admin = User.objects.create_superuser("admin", "", "motdepasse-admin")
+        Personne.objects.create(nom="Avant", prenoms="Restauration")
+
+    def tearDown(self):
+        self.over.disable()
+        shutil.rmtree(self.tmp)
+
+    def test_creer_verifier_restaurer(self):
+        from . import sauvegardes as sv
+        chemin = sv.creer("manuelle")
+        infos = sv.verifier(chemin)
+        self.assertEqual((infos["employes"], infos["fichiers"]), (1, 1))
+        # On modifie les données, puis on restaure
+        Personne.objects.create(nom="Apres", prenoms="Coup")
+        (self.media / "photos" / "a.jpg").unlink()
+        (self.media / "nouveau.txt").write_text("x")
+        _, securite = sv.restaurer(chemin)
+        self.assertEqual(list(Personne.objects.values_list("nom", flat=True)), ["Avant"])
+        self.assertTrue((self.media / "photos" / "a.jpg").exists())
+        self.assertFalse((self.media / "nouveau.txt").exists())
+        self.assertEqual(sv.verifier(securite)["employes"], 2)  # l'état d'avant est conservé
+
+    def test_rotation(self):
+        from . import sauvegardes as sv
+        import time
+        for i in range(5):
+            sv.creer("test")
+            time.sleep(1.05)
+        self.assertEqual(len(sv.lister()), 3)
+
+    def test_fichiers_refuses(self):
+        from . import sauvegardes as sv
+        piege = self.tmp / "piege.zip"
+        with zipfile.ZipFile(piege, "w") as z:
+            z.write(sv.creer("x"), "inutile.zip")
+        with self.assertRaises(sv.SauvegardeInvalide):
+            sv.verifier(piege)  # pas de base
+        bonne = sv.creer("y")
+        evasion = self.tmp / "evasion.zip"
+        with zipfile.ZipFile(bonne) as src, zipfile.ZipFile(evasion, "w") as z:
+            z.writestr("db.sqlite3", src.read("db.sqlite3"))
+            z.writestr("media/../../evil.txt", "x")
+        with self.assertRaises(sv.SauvegardeInvalide):
+            sv.verifier(evasion)
+        texte = self.tmp / "faux.zip"
+        texte.write_text("pas un zip")
+        with self.assertRaises(sv.SauvegardeInvalide):
+            sv.verifier(texte)
+        with self.assertRaises(sv.SauvegardeInvalide):
+            sv.chemin_existant("../../etc/passwd")
+
+    def test_pages(self):
+        self.client.force_login(self.admin)
+        r = self.client.post(reverse("sauvegardes"), {"action": "creer"}, follow=True)
+        self.assertContains(r, "Sauvegarde créée")
+        nom = r.context["liste"][0]["nom"]
+        r = self.client.get(reverse("sauvegarde_telecharger", args=[nom]))
+        self.assertEqual(b"".join(r.streaming_content)[:2], b"PK")
+        r = self.client.post(reverse("sauvegardes"), {"action": "restaurer", "nom": nom, "confirmation": "non"}, follow=True)
+        self.assertContains(r, "RESTAURER")
+        r = self.client.post(reverse("sauvegardes"), {"action": "restaurer", "nom": nom, "confirmation": "RESTAURER"})
+        self.assertRedirects(r, reverse("login"))
+
+
+class PaieTests(Base):
+    def test_retenues_indicatives(self):
+        from .paie import retenues
+        r = retenues(Decimal("8623"), self.p)
+        montants = {l["libelle"].split(" ")[0]: l["montant"] for l in r["lignes"]}
+        self.assertEqual(montants["CNSS"], Decimal("268.80"))  # plafonné à 6000 × 4,48 %
+        self.assertEqual(montants["AMO"], Decimal("194.88"))
+        self.assertEqual(r["imposable"], Decimal("6003.57"))
+        self.assertEqual(montants["IR"], Decimal("367.38"))
+        self.assertEqual(r["net"], Decimal("8623.00") - Decimal("268.80") - Decimal("194.88") - Decimal("367.38"))
+        # Petit salaire : pas d'IR
+        self.assertEqual(retenues(Decimal("3000"), self.p)["lignes"][2]["montant"], 0)
+        # Charges de famille : moins d'IR
+        self.p.situation_familiale, self.p.enfants = "marie", 2
+        self.assertLess(retenues(Decimal("8623"), self.p)["lignes"][2]["montant"], Decimal("367.38"))
+
+    def test_pages_paie(self):
+        self.client.force_login(self.admin)
+        Pointage.objects.create(personne=self.p, checkin=aware(2026, 3, 2, 8), checkout=aware(2026, 3, 2, 16))
+        r = self.client.get(reverse("fiche_de_paie", args=[self.p.pk]) + "?mois=2026-03")
+        self.assertContains(r, "Net à payer")
+        r = self.client.get(reverse("fiches_de_paie") + "?mois=2026-03")
+        self.assertEqual(len(r.context["fiches"]), 1)
+        for nom in ("parametres", "entreprise", "sauvegardes"):
+            self.assertEqual(self.client.get(reverse(nom)).status_code, 200)
+        r = self.client.post(reverse("entreprise"), {"raison_sociale": "BTP Atlas", "ice": "001234567000089"})
+        self.assertRedirects(r, reverse("parametres"))
+        self.assertContains(self.client.get(reverse("fiche_de_paie", args=[self.p.pk]) + "?mois=2026-03"), "BTP Atlas")
+        self.client.force_login(self.pointeur)
+        for nom in ("parametres", "sauvegardes", "fiches_de_paie"):
+            self.assertEqual(self.client.get(reverse(nom)).status_code, 403)

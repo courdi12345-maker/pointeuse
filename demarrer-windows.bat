@@ -20,6 +20,7 @@ set POINTAGE_DEBUG=1
 venv\Scripts\python manage.py makemigrations pointages > nul
 venv\Scripts\python manage.py migrate
 venv\Scripts\python manage.py premier_demarrage
+venv\Scripts\python manage.py sauvegarder --motif demarrage > nul
 echo.
 echo Pointage Max demarre : http://127.0.0.1:8000/
 echo Fermez cette fenetre pour arreter.

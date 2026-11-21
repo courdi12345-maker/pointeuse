@@ -15,6 +15,7 @@
       <a class="bouton secondaire" href="{% url 'badge' p.pk %}">🪪 Badge QR</a>
       {% if modifiable %}<a class="bouton" href="{% url 'employe_modifier' p.pk %}">Modifier</a>{% endif %}
       {% if admin %}<a class="bouton secondaire" href="{% url 'conge_nouveau' %}?personne={{ p.pk }}">+ Congé</a>{% endif %}
+      {% if admin %}<a class="bouton secondaire" href="{% url 'fiche_de_paie' p.pk %}">🧾 Fiche de paie</a>{% endif %}
     </div>
   </div>
 </div>
@@ -55,11 +56,11 @@
       {% empty %}<li class="vide">Aucun congé en {{ annee }}.</li>{% endfor %}
     </ul>
     {% if admin and soldes_annees %}
-    <table style="margin-top:12px">
+    <div class="tableau-wrap"><table style="margin-top:12px">
       <thead><tr><th>Droits de</th><th class="num">Acquis</th><th class="num">Pris</th><th class="num">Reste</th><th>Valable jusqu'à</th></tr></thead>
       <tbody>{% for l in soldes_annees %}<tr><td>{{ l.annee }}</td><td class="num">{{ l.acquis|floatformat:"-1" }}</td><td class="num">{{ l.pris|floatformat:"-1" }}</td>
         <td class="num">{% if l.expire %}<span class="etat gris">expiré</span>{% else %}{{ l.reste|floatformat:"-1" }}{% endif %}</td><td>fin {{ l.expire_fin }}</td></tr>{% endfor %}</tbody>
-    </table>
+    </table></div>
     {% endif %}
     <p class="sous-titre" style="margin-top:10px">Les jours de repos et les jours fériés ne sont pas décomptés. Les jours pris le sont d'abord sur l'année la plus ancienne.</p>
   </div>

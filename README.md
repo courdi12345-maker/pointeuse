@@ -17,10 +17,19 @@ avec lecteur de carte d'identité électronique (eID), écran LCD et LED.
 | **Badge** | Admin, pointeur | Badge format carte bancaire à imprimer, ou QR code PNG à envoyer sur le téléphone de l'employé |
 | **Bilan mensuel** | Admin | Jours, heures, congés, absences, salaire théorique et réel par employé ; filtres ville/service ; export Excel, CSV et impression |
 | **Congés** | Admin | Ajout, modification, suppression ; congé annuel, maladie, maternité… Jours de repos et fériés non décomptés, chevauchements refusés ; tableau des soldes FIFO de tous les employés |
-| **Utilisateurs** | Admin | Comptes administrateur et pointeur : création, rôle, désactivation, mot de passe |
 | **Importer** | Admin | Import des employés et de l'historique des pointages depuis Excel ou CSV, avec modèles et vérification avant import |
+| **Fiches de paie** | Admin | Bulletin mensuel par employé ou pour tout le mois (une fiche par page) : présence, salaire brut, retenues CNSS / AMO / IR indicatives, net à payer |
 | **Journal** | Admin | Qui a créé, modifié ou supprimé quoi, et quand |
+| **Paramètres** | Admin | Entreprise (en-tête des fiches de paie), utilisateurs, sauvegardes, villes, services, contrats, jours fériés |
+| **Sauvegardes** | Admin | Sauvegarde automatique chaque nuit (et à chaque démarrage sur PC), téléchargement, restauration |
 | **Paramètres** | Admin | Villes, services/chantiers (avec heure de début), types de contrat, jours fériés, utilisateurs |
+
+### Fiche de paie : retenues indicatives
+
+Les retenues (CNSS 4,48 % plafonnée à 6 000 DH, AMO 2,26 %, frais professionnels, barème IR 2025 et
+déduction de 500 DH/an par personne à charge) sont calculées **à titre indicatif**. Faites-les valider
+par votre comptable. Les taux sont regroupés dans `pointeuse/settings.py` (`POINTAGE_MAX["PAIE"]`) pour
+être mis à jour à chaque loi de finances. Pour n'afficher que le brut, sans retenues : `POINTAGE_RETENUES=0`.
 
 ### Calcul du salaire réel
 
@@ -48,8 +57,9 @@ Les données restent sur votre ordinateur (fichier `db.sqlite3` et dossier `medi
 ```bash
 git clone https://github.com/Lapin-Blanc/pointeuse.git
 cd pointeuse
-bash install.sh          # application web seule
-bash install.sh --eid    # + borne avec lecteur eID, LCD et LED
+bash install.sh                  # application web seule
+bash install.sh --https          # + HTTPS sur le réseau local (caméra des téléphones) — recommandé
+bash install.sh --https --eid    # + borne avec lecteur eID, LCD et LED
 ```
 
 Le script installe tout dans un environnement virtuel, crée la base de données, ajoute les jours
@@ -61,15 +71,34 @@ fériés marocains à date fixe, demande le compte administrateur et démarre le
 
 1. Connectez-vous avec le compte administrateur.
 2. **Paramètres** : créez les villes, les services/chantiers (avec leur heure de début) et les types de contrat.
-3. **Paramètres → Jours fériés** : ajoutez les fêtes religieuses de l'année (Aïd al-Fitr, Aïd al-Adha, 1er Moharram, Aïd al-Mawlid).
-4. **Utilisateurs** : créez les comptes des pointeurs (ou d'autres administrateurs).
-5. **Employés** : créez les fiches, puis imprimez les badges.
+3. **Paramètres → Entreprise** : raison sociale, ICE, CNSS et logo (en-tête des fiches de paie).
+4. **Paramètres → Jours fériés** : ajoutez les fêtes religieuses de l'année (Aïd al-Fitr, Aïd al-Adha, 1er Moharram, Aïd al-Mawlid).
+5. **Paramètres → Utilisateurs** : créez les comptes des pointeurs (ou d'autres administrateurs).
+6. **Employés** : créez les fiches, puis imprimez les badges.
 
-### Caméra sur téléphone
+### Caméra sur téléphone (HTTPS)
 
-Les navigateurs n'autorisent la caméra qu'en **HTTPS**. Sur le réseau local en HTTP, utilisez un
-lecteur de QR code USB (il tape le code dans le champ) ou mettez le site derrière un serveur HTTPS
-(Caddy, Nginx…) et ajoutez `Environment=POINTAGE_HTTPS=1` au service `pointage-web`.
+Les navigateurs n'autorisent la caméra qu'en **HTTPS**. Avec `bash install.sh --https`, le serveur
+[Caddy](https://caddyserver.com/) chiffre les connexions avec un certificat créé localement, sans Internet
+ni nom de domaine. L'application est alors sur `https://<adresse-du-pi>/`.
+
+Pour que les téléphones fassent confiance à ce certificat, installez-le **une fois** sur chaque téléphone :
+ouvrez `https://<adresse-du-pi>/certificat.crt` (acceptez l'avertissement la première fois), puis :
+- **Android** : Paramètres → Sécurité → Chiffrement et identifiants → Installer un certificat → Certificat CA.
+- **iPhone** : Réglages → Profil téléchargé → Installer, puis Réglages → Général → Informations →
+  Réglages des certificats → activer « Pointage Max ».
+
+Sans HTTPS, le pointage reste possible avec un lecteur QR USB ou en tapant le matricule.
+
+### Sauvegardes
+
+- Une sauvegarde est faite **chaque nuit à 2 h 30** (et à chaque lancement sur PC) dans le dossier `sauvegardes/` ;
+  les 30 plus récentes sont gardées.
+- **Paramètres → Sauvegardes** : sauvegarder maintenant, télécharger, restaurer. Avant chaque restauration,
+  l'état actuel est sauvegardé automatiquement.
+- **Gardez une copie hors de l'appareil** (clé USB, Google Drive) : si l'appareil tombe en panne, les
+  sauvegardes qu'il contient sont perdues avec lui.
+- En ligne de commande : `venv/bin/python manage.py sauvegarder` et `venv/bin/python manage.py restaurer fichier.zip`.
 
 ## Réglages
 
@@ -87,7 +116,10 @@ Dans `/etc/systemd/system/pointage-web.service` (puis `sudo systemctl restart po
 | `POINTAGE_CONGE_REPORT` | `2` | Années pendant lesquelles un reliquat de congé reste utilisable (décompte FIFO) |
 | `POINTAGE_HEURE_DEBUT` | `08:00` | Heure de début si le service n'en a pas |
 | `POINTAGE_TOLERANCE_RETARD` | `10` | Minutes de tolérance avant un retard |
-| `POINTAGE_HTTPS` | `0` | `1` si le site est servi en HTTPS |
+| `POINTAGE_HTTPS` | `0` | `1` si le site est servi en HTTPS (réglé par `install.sh --https`) |
+| `POINTAGE_SAUVEGARDES_DIR` | `sauvegardes/` | Dossier des sauvegardes (ex. une clé USB montée) |
+| `POINTAGE_SAUVEGARDES_A_GARDER` | `30` | Nombre de sauvegardes conservées |
+| `POINTAGE_RETENUES` | `1` | `0` pour des fiches de paie sans retenues (brut seulement) |
 | `POINTAGE_DEBUG` | `0` | `1` uniquement pour le développement |
 
 Pour la Belgique par exemple : `POINTAGE_TZ=Europe/Brussels`, `POINTAGE_DEVISE=€`,

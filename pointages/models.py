@@ -294,3 +294,39 @@ class Journal(models.Model):
 
     def __str__(self):
         return "%s %s %s" % (self.date, self.action, self.objet)
+
+
+# ---------------------------------------------------------------------------
+# Entreprise (en-tête des fiches de paie et des badges)
+# ---------------------------------------------------------------------------
+
+class Entreprise(models.Model):
+    raison_sociale = models.CharField(max_length=150, default="Mon entreprise")
+    adresse = models.CharField(max_length=200, blank=True)
+    ville = models.CharField(max_length=100, blank=True)
+    telephone = models.CharField("Téléphone", max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    ice = models.CharField("ICE", max_length=20, blank=True)
+    rc = models.CharField("Registre de commerce", max_length=30, blank=True)
+    identifiant_fiscal = models.CharField("Identifiant fiscal (IF)", max_length=20, blank=True)
+    cnss = models.CharField("N° d'affiliation CNSS", max_length=20, blank=True)
+    logo = models.ImageField(upload_to="entreprise/", blank=True)
+
+    class Meta:
+        verbose_name = "Entreprise"
+        verbose_name_plural = "Entreprise"
+
+    def __str__(self):
+        return self.raison_sociale
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # une seule fiche entreprise
+        super().save(*args, **kwargs)
+
+    def identifiants(self):
+        morceaux = [("ICE", self.ice), ("RC", self.rc), ("IF", self.identifiant_fiscal), ("CNSS", self.cnss)]
+        return " · ".join("%s %s" % (k, v) for k, v in morceaux if v)
+
+    @classmethod
+    def courante(cls):
+        return cls.objects.get_or_create(pk=1)[0]

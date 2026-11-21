@@ -12,6 +12,7 @@ export POINTAGE_DEBUG=1
 venv/bin/python manage.py makemigrations pointages > /dev/null
 venv/bin/python manage.py migrate
 venv/bin/python manage.py premier_demarrage
+venv/bin/python manage.py sauvegarder --motif demarrage > /dev/null
 echo
 echo "Pointage Max démarre : http://127.0.0.1:8000/  (Ctrl+C pour arrêter)"
 ( sleep 2; (command -v open > /dev/null && open http://127.0.0.1:8000/) || xdg-open http://127.0.0.1:8000/ ) > /dev/null 2>&1 &
