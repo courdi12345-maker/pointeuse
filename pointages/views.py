@@ -16,6 +16,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import stats
+from .conges import soldes as soldes_conges
 from .forms import LieuForm, PersonneForm, PointageManuelForm
 from .models import Journal, Personne, Pointage, Service, Ville
 from .services import ARRIVEE, SORTIE, TROP_COURT, est_admin, est_pointeur, pointer
@@ -356,6 +357,7 @@ def employe_fiche(request, pk):
     return render(request, "pointages/employe_fiche.html", {
         "p": personne, "pointages": pointages, "conges": conges, "annee": annee, "annees": annees,
         "solde": personne.solde_conge(), "admin": est_admin(request.user),
+        "soldes_annees": soldes_conges(personne)["annees"][-3:],
         "modifiable": _peut_modifier_employe(request.user, personne),
         "bilan": stats.bilan_mensuel(a, m, personne=personne)["lignes"][0] if est_admin(request.user) else None,
     })
@@ -429,3 +431,130 @@ def importer_modele(request, type_import):
                      content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     r["Content-Disposition"] = 'attachment; filename="modele-%s.xlsx"' % type_import
     return r
+
+
+# ---------------------------------------------------------------------------
+# Congés
+# ---------------------------------------------------------------------------
+
+@admin_requis
+def conges(request):
+    from .conges import soldes
+    from .models import Conge, TYPE_CONGE_CHOICES
+
+    aujourd_hui = timezone.localdate()
+    try:
+        annee = int(request.GET.get("annee", aujourd_hui.year))
+    except ValueError:
+        annee = aujourd_hui.year
+    qs = Conge.objects.select_related("personne", "personne__service").filter(debut__year=annee)
+    type_conge = request.GET.get("type", "")
+    if type_conge:
+        qs = qs.filter(type=type_conge)
+    q = request.GET.get("q", "").strip()
+    if q:
+        qs = qs.filter(Q(personne__nom__icontains=q) | Q(personne__prenoms__icontains=q)
+                       | Q(personne__matricule__iexact=q))
+    lignes = list(qs.order_by("-debut"))
+    for c in lignes:
+        c.statut = "en cours" if c.debut <= aujourd_hui <= c.fin else ("à venir" if c.debut > aujourd_hui else "terminé")
+
+    tableau_soldes = []
+    if request.GET.get("vue") == "soldes":
+        personnes = Personne.objects.filter(actif=True).select_related("service")
+        if q:
+            personnes = personnes.filter(Q(nom__icontains=q) | Q(prenoms__icontains=q) | Q(matricule__iexact=q))
+        for p in personnes:
+            s = soldes(p)
+            courante = next((l for l in s["annees"] if l["annee"] == aujourd_hui.year), None)
+            reliquat = sum(l["reste"] for l in s["annees"] if l["annee"] < aujourd_hui.year and not l["expire"])
+            pris_annee = sum(c.jours_ouvres() for c in p.conge_set.filter(type="annuel", debut__year=aujourd_hui.year))
+            tableau_soldes.append({"personne": p, "acquis": courante["acquis"] if courante else 0,
+                                   "pris": pris_annee, "reliquat": reliquat,
+                                   "disponible": s["disponible"]})
+    annees = sorted({d.year for d in Conge.objects.dates("debut", "year")} | {aujourd_hui.year}, reverse=True)
+    return render(request, "pointages/conges.html", {
+        "conges": lignes, "annee": annee, "annees": annees, "types": TYPE_CONGE_CHOICES,
+        "type_conge": type_conge, "q": q, "vue": request.GET.get("vue", "liste"), "soldes": tableau_soldes,
+    })
+
+
+@admin_requis
+def conge_form(request, pk=None):
+    from .forms import CongeForm
+    from .models import Conge
+
+    conge = get_object_or_404(Conge, pk=pk) if pk else None
+    initial = {}
+    if not conge and request.GET.get("personne"):
+        initial["personne"] = request.GET.get("personne")
+    form = CongeForm(request.POST or None, instance=conge, initial=initial)
+    if request.method == "POST" and form.is_valid():
+        obj = form.save(commit=False)
+        if not conge:
+            obj.cree_par = request.user
+        obj.save()
+        if form.avertissement:
+            messages.warning(request, form.avertissement)
+        messages.success(request, "Congé enregistré : %s (%d jour(s) décompté(s))." % (obj, obj.jours_ouvres()))
+        return redirect(request.GET.get("suite") or "conges")
+    return render(request, "pointages/conge_form.html", {"form": form, "conge": conge})
+
+
+@admin_requis
+@require_POST
+def conge_supprimer(request, pk):
+    from .models import Conge
+
+    get_object_or_404(Conge, pk=pk).delete()
+    messages.success(request, "Congé supprimé.")
+    return redirect("conges")
+
+
+# ---------------------------------------------------------------------------
+# Utilisateurs
+# ---------------------------------------------------------------------------
+
+def _role(user):
+    return "admin" if est_admin(user) else ("pointeur" if est_pointeur(user) else "aucun")
+
+
+@admin_requis
+def utilisateurs(request):
+    from django.contrib.auth.models import User
+
+    comptes = list(User.objects.order_by("-is_active", "username").prefetch_related("groups"))
+    for u in comptes:
+        u.role = _role(u)
+    return render(request, "pointages/utilisateurs.html", {"comptes": comptes})
+
+
+@admin_requis
+def utilisateur_form(request, pk=None):
+    from django.contrib.auth.models import Group, User
+    from .forms import UtilisateurForm
+    from .services import GROUPE_ADMIN, GROUPE_POINTEUR
+
+    compte = get_object_or_404(User, pk=pk) if pk else None
+    initial = {}
+    if compte:
+        initial = {"username": compte.username, "first_name": compte.first_name, "last_name": compte.last_name,
+                   "role": "admin" if _role(compte) == "admin" else "pointeur", "actif": compte.is_active}
+    form = UtilisateurForm(request.POST or None, initial=initial, utilisateur=compte, demandeur=request.user)
+    if request.method == "POST" and form.is_valid():
+        d = form.cleaned_data
+        compte = compte or User()
+        compte.username, compte.first_name, compte.last_name = d["username"], d["first_name"], d["last_name"]
+        compte.is_active = d["actif"]
+        compte.is_staff = d["role"] == "admin"  # accès à « Paramètres »
+        if d["password1"]:
+            compte.set_password(d["password1"])
+        compte.save()
+        if not compte.is_superuser:
+            compte.groups.set([Group.objects.get(name=GROUPE_ADMIN if d["role"] == "admin" else GROUPE_POINTEUR)])
+        if compte == request.user and d["password1"]:
+            from django.contrib.auth import update_session_auth_hash
+            update_session_auth_hash(request, compte)
+        messages.success(request, "Compte « %s » enregistré." % compte.username)
+        return redirect("utilisateurs")
+    return render(request, "pointages/utilisateur_form.html", {"form": form, "compte": compte})

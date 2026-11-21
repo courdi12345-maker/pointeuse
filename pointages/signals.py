@@ -29,8 +29,18 @@ def journal_suppression(sender, instance, **kwargs):
 
 def creer_groupes(sender, **kwargs):
     if sender.name == "pointages":
-        Group.objects.get_or_create(name=GROUPE_ADMIN)
+        from django.apps import apps
+        from django.contrib.auth.management import create_permissions
+        from django.contrib.auth.models import Permission
+
+        # Les permissions sont créées par Django après ce signal : on les crée d'abord.
+        for app in ("auth", "pointages"):
+            create_permissions(apps.get_app_config(app), verbosity=0, using=kwargs.get("using", "default"))
+        admin, _ = Group.objects.get_or_create(name=GROUPE_ADMIN)
         Group.objects.get_or_create(name=GROUPE_POINTEUR)
+        # Les administrateurs gèrent tout le contenu de Pointage Max et les comptes depuis « Paramètres ».
+        admin.permissions.set(Permission.objects.filter(
+            content_type__app_label__in=["pointages", "auth"]).exclude(content_type__model="permission"))
 
 
 post_migrate.connect(creer_groupes)

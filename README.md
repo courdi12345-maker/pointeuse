@@ -16,7 +16,8 @@ avec lecteur de carte d'identité électronique (eID), écran LCD et LED.
 | **Employés** | Admin, pointeur | Fiche complète (photo, CIN, CNSS, famille, poste, contrat, paie, RIB, pièce d'identité scannée). Le pointeur peut créer une fiche et la corriger pendant 24 h |
 | **Badge** | Admin, pointeur | Badge format carte bancaire à imprimer, ou QR code PNG à envoyer sur le téléphone de l'employé |
 | **Bilan mensuel** | Admin | Jours, heures, congés, absences, salaire théorique et réel par employé ; filtres ville/service ; export Excel, CSV et impression |
-| **Congés** | Admin | Congé annuel, maladie, maternité… Les jours de repos et les jours fériés ne sont pas décomptés ; solde annuel |
+| **Congés** | Admin | Ajout, modification, suppression ; congé annuel, maladie, maternité… Jours de repos et fériés non décomptés, chevauchements refusés ; tableau des soldes FIFO de tous les employés |
+| **Utilisateurs** | Admin | Comptes administrateur et pointeur : création, rôle, désactivation, mot de passe |
 | **Importer** | Admin | Import des employés et de l'historique des pointages depuis Excel ou CSV, avec modèles et vérification avant import |
 | **Journal** | Admin | Qui a créé, modifié ou supprimé quoi, et quand |
 | **Paramètres** | Admin | Villes, services/chantiers (avec heure de début), types de contrat, jours fériés, utilisateurs |
@@ -61,8 +62,7 @@ fériés marocains à date fixe, demande le compte administrateur et démarre le
 1. Connectez-vous avec le compte administrateur.
 2. **Paramètres** : créez les villes, les services/chantiers (avec leur heure de début) et les types de contrat.
 3. **Paramètres → Jours fériés** : ajoutez les fêtes religieuses de l'année (Aïd al-Fitr, Aïd al-Adha, 1er Moharram, Aïd al-Mawlid).
-4. **Paramètres → Utilisateurs** : créez les comptes des pointeurs et mettez-les dans le groupe **Pointeur**
-   (ou **Administrateur** pour un deuxième administrateur).
+4. **Utilisateurs** : créez les comptes des pointeurs (ou d'autres administrateurs).
 5. **Employés** : créez les fiches, puis imprimez les badges.
 
 ### Caméra sur téléphone

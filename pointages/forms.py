@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from django import forms
 from django.utils import timezone
 
-from .models import Personne, Service, Ville
+from .models import Conge, Personne, Service, Ville, jours_ouvres
 
 
 class DateInput(forms.DateInput):
@@ -89,4 +89,99 @@ class PointageManuelForm(forms.Form):
                     raise forms.ValidationError(
                         "Ce pointage chevauche un pointage existant (%s). Contactez l'administrateur pour le corriger."
                         % timezone.localtime(p.checkin).strftime("%H:%M"))
+        return data
+
+
+# ---------------------------------------------------------------------------
+# Congés
+# ---------------------------------------------------------------------------
+
+class CongeForm(forms.ModelForm):
+    class Meta:
+        model = Conge
+        fields = ["personne", "type", "debut", "fin", "motif"]
+        widgets = {"debut": DateInput(), "fin": DateInput()}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["personne"].queryset = Personne.objects.filter(actif=True)
+        self.avertissement = None
+
+    def clean(self):
+        from .conges import disponible
+
+        data = super().clean()
+        debut, fin, personne = data.get("debut"), data.get("fin"), data.get("personne")
+        if debut and fin and fin < debut:
+            raise forms.ValidationError("La date de fin doit être après la date de début.")
+        if personne and debut and fin:
+            autres = personne.conge_set.filter(debut__lte=fin, fin__gte=debut).exclude(pk=self.instance.pk)
+            if autres.exists():
+                c = autres.first()
+                raise forms.ValidationError("Ce congé chevauche un autre congé de %s (du %s au %s)." % (
+                    personne, c.debut.strftime("%d/%m/%Y"), c.fin.strftime("%d/%m/%Y")))
+            if data.get("type") == "annuel":
+                demande = jours_ouvres(debut, fin)
+                dispo = disponible(personne)
+                if self.instance.pk and self.instance.type == "annuel":
+                    dispo += self.instance.jours_ouvres()
+                if demande > dispo:
+                    self.avertissement = ("Attention : %s jour(s) décompté(s) pour un solde disponible de %s jour(s). "
+                                          "Le congé est enregistré, le solde devient négatif." % (demande, dispo))
+        return data
+
+
+# ---------------------------------------------------------------------------
+# Utilisateurs
+# ---------------------------------------------------------------------------
+
+ROLE_CHOICES = (("pointeur", "Pointeur"), ("admin", "Administrateur"))
+
+
+class UtilisateurForm(forms.Form):
+    username = forms.RegexField(r"^[\w.@+-]+$", max_length=150, label="Identifiant",
+                                error_messages={"invalid": "Lettres, chiffres et . @ + - _ uniquement."})
+    first_name = forms.CharField(max_length=150, required=False, label="Prénom")
+    last_name = forms.CharField(max_length=150, required=False, label="Nom")
+    role = forms.ChoiceField(choices=ROLE_CHOICES, label="Rôle")
+    actif = forms.BooleanField(required=False, initial=True, label="Compte actif")
+    password1 = forms.CharField(widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
+                                required=False, label="Mot de passe")
+    password2 = forms.CharField(widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
+                                required=False, label="Confirmer le mot de passe")
+
+    def __init__(self, *args, utilisateur=None, demandeur=None, **kwargs):
+        self.utilisateur, self.demandeur = utilisateur, demandeur
+        super().__init__(*args, **kwargs)
+        if utilisateur:
+            self.fields["password1"].help_text = "Laisser vide pour ne pas changer le mot de passe."
+
+    def clean_username(self):
+        from django.contrib.auth.models import User
+        nom = self.cleaned_data["username"]
+        qs = User.objects.filter(username__iexact=nom)
+        if self.utilisateur:
+            qs = qs.exclude(pk=self.utilisateur.pk)
+        if qs.exists():
+            raise forms.ValidationError("Cet identifiant est déjà utilisé.")
+        return nom
+
+    def clean(self):
+        from django.contrib.auth import password_validation
+        data = super().clean()
+        p1, p2 = data.get("password1"), data.get("password2")
+        if not self.utilisateur and not p1:
+            self.add_error("password1", "Le mot de passe est obligatoire pour un nouveau compte.")
+        if p1 or p2:
+            if p1 != p2:
+                self.add_error("password2", "Les deux mots de passe ne sont pas identiques.")
+            else:
+                try:
+                    password_validation.validate_password(p1, self.utilisateur)
+                except forms.ValidationError as e:
+                    self.add_error("password1", e)
+        if self.utilisateur and self.utilisateur == self.demandeur:
+            if data.get("role") != "admin" or not data.get("actif"):
+                raise forms.ValidationError("Vous ne pouvez pas retirer vos propres droits d'administrateur "
+                                            "ni désactiver votre propre compte.")
         return data
