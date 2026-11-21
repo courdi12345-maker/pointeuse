@@ -1,0 +1,73 @@
+{% extends "pointages/base.html" %}
+{% load static %}
+{% block titre %}Congés{% endblock %}
+{% block contenu %}
+<div class="entete-page">
+  <div>
+    <h1>Congés</h1>
+    <p class="sous-titre">{{ APP.CONGE_ANNUEL_JOURS }} jours par an, acquis au prorata des mois travaillés. Les reliquats sont utilisés en premier et restent valables {{ APP.CONGE_REPORT_ANNEES }} ans.</p>
+  </div>
+  <a class="bouton" href="{% url 'conge_nouveau' %}">+ Nouveau congé</a>
+</div>
+
+<div class="actions" style="margin-bottom:14px">
+  <a class="bouton {% if vue != 'soldes' %}{% else %}secondaire{% endif %}" href="?vue=liste&annee={{ annee }}">Liste des congés</a>
+  <a class="bouton {% if vue == 'soldes' %}{% else %}secondaire{% endif %}" href="?vue=soldes">Soldes des employés</a>
+</div>
+
+<div class="carte">
+  <form class="filtres" method="get">
+    <input type="hidden" name="vue" value="{{ vue }}">
+    <div><label for="q">Employé</label><input id="q" name="q" value="{{ q }}" placeholder="Nom ou matricule"></div>
+    {% if vue != "soldes" %}
+    <div><label for="annee">Année</label><select id="annee" name="annee">{% for a in annees %}<option {% if a == annee %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></div>
+    <div><label for="type">Type</label><select id="type" name="type"><option value="">— Tous —</option>{% for v, l in types %}<option value="{{ v }}" {% if v == type_conge %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    {% endif %}
+    <button class="bouton">Filtrer</button>
+  </form>
+</div>
+
+{% if vue == "soldes" %}
+<div class="carte tableau-wrap">
+  <table>
+    <thead><tr><th>Employé</th><th>Service</th><th class="num">Reliquat restant des années précédentes</th><th class="num">Acquis cette année</th><th class="num">Jours pris cette année</th><th class="num">Disponible</th><th></th></tr></thead>
+    <tbody>
+    {% for s in soldes %}
+      <tr>
+        <td><a href="{% url 'employe_fiche' s.personne.pk %}">{{ s.personne.nom }} {{ s.personne.prenoms }}</a></td>
+        <td>{{ s.personne.service|default:"—" }}</td>
+        <td class="num">{{ s.reliquat|floatformat:"-1" }}</td>
+        <td class="num">{{ s.acquis|floatformat:"-1" }}</td>
+        <td class="num">{{ s.pris|floatformat:"-1" }}</td>
+        <td class="num"><span class="etat {% if s.disponible < 0 %}rouge{% elif s.disponible < 5 %}orange{% else %}vert{% endif %}">{{ s.disponible|floatformat:"-1" }} j</span></td>
+        <td><a class="bouton petit secondaire" href="{% url 'conge_nouveau' %}?personne={{ s.personne.pk }}">+ Congé</a></td>
+      </tr>
+    {% empty %}<tr><td colspan="7" class="vide">Aucun employé actif.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="carte tableau-wrap">
+  <table>
+    <thead><tr><th>Employé</th><th>Type</th><th>Du</th><th>Au</th><th class="num">Jours décomptés</th><th>Statut</th><th>Motif</th><th></th></tr></thead>
+    <tbody>
+    {% for c in conges %}
+      <tr>
+        <td><a href="{% url 'employe_fiche' c.personne.pk %}">{{ c.personne }}</a></td>
+        <td><span class="etat bleu">{{ c.get_type_display }}</span></td>
+        <td>{{ c.debut|date:"D d/m/Y" }}</td><td>{{ c.fin|date:"D d/m/Y" }}</td>
+        <td class="num">{{ c.jours_ouvres }} <span class="sous-titre">/ {{ c.jours_calendaires }}</span></td>
+        <td><span class="etat {% if c.statut == 'en cours' %}vert{% elif c.statut == 'à venir' %}orange{% else %}gris{% endif %}">{{ c.statut }}</span></td>
+        <td>{{ c.motif }}</td>
+        <td class="actions">
+          <a class="bouton petit secondaire" href="{% url 'conge_modifier' c.pk %}">Modifier</a>
+          <form method="post" action="{% url 'conge_supprimer' c.pk %}" data-confirmer="Supprimer ce congé ?">{% csrf_token %}<button class="bouton petit danger">Supprimer</button></form>
+        </td>
+      </tr>
+    {% empty %}<tr><td colspan="8" class="vide">Aucun congé pour ces critères.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{% static 'pointages/confirmer.js' %}"></script>{% endblock %}

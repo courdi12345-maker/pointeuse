@@ -26,16 +26,16 @@ h2 { font-size: 1.1rem; margin: 0 0 12px; }
 .barre { background: var(--bleu); color: #fff; display: flex; align-items: center; flex-wrap: wrap; padding: 0 16px; position: sticky; top: 0; z-index: 10; }
 .logo { color: #fff; text-decoration: none; font-weight: 700; font-size: 1.15rem; padding: 14px 16px 14px 0; display: flex; gap: 6px; align-items: center; }
 .menu { display: flex; flex: 1; align-items: center; flex-wrap: wrap; }
-.menu > a { color: #dbe7f3; text-decoration: none; padding: 16px 12px; border-bottom: 3px solid transparent; }
+.menu > a { color: #dbe7f3; text-decoration: none; padding: 16px 9px; border-bottom: 3px solid transparent; font-size: .93rem; white-space: nowrap; }
 .menu > a:hover { color: #fff; }
 .menu > a.actif { color: #fff; border-bottom-color: #fff; font-weight: 600; }
-.menu-user { margin-left: auto; display: flex; gap: 12px; align-items: center; font-size: .9rem; }
+.menu-user { margin-left: auto; display: flex; gap: 12px; align-items: center; font-size: .85rem; white-space: nowrap; }
 .menu-user a { color: #dbe7f3; text-decoration: none; }
 .menu-user form { margin: 0; }
 .lien { background: none; border: 0; color: #dbe7f3; cursor: pointer; font: inherit; text-decoration: underline; padding: 0; }
 .menu-bascule, .menu-bouton { display: none; }
 
-@media (max-width: 900px) {
+@media (max-width: 1200px) {
   .menu-bouton { display: block; margin-left: auto; font-size: 1.5rem; cursor: pointer; padding: 8px; }
   .menu { display: none; flex-basis: 100%; flex-direction: column; align-items: stretch; padding-bottom: 8px; }
   .menu-bascule:checked ~ .menu { display: flex; }

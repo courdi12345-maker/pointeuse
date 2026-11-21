@@ -20,9 +20,10 @@
     <a href="{% url 'employes' %}" class="{% if 'employe' in request.resolver_match.url_name or request.resolver_match.url_name == 'badge' %}actif{% endif %}">Employés</a>
     {% if est_admin %}
     <a href="{% url 'bilan' %}" class="{% if request.resolver_match.url_name == 'bilan' %}actif{% endif %}">Bilan mensuel</a>
-    <a href="{% url 'admin:pointages_conge_changelist' %}">Congés</a>
+    <a href="{% url 'conges' %}" class="{% if 'conge' in request.resolver_match.url_name %}actif{% endif %}">Congés</a>
     <a href="{% url 'importer' %}" class="{% if request.resolver_match.url_name == 'importer' %}actif{% endif %}">Importer</a>
     <a href="{% url 'journal' %}" class="{% if request.resolver_match.url_name == 'journal' %}actif{% endif %}">Journal</a>
+    <a href="{% url 'utilisateurs' %}" class="{% if 'utilisateur' in request.resolver_match.url_name %}actif{% endif %}">Utilisateurs</a>
     <a href="{% url 'admin:index' %}">Paramètres</a>
     {% endif %}
     <span class="menu-user">

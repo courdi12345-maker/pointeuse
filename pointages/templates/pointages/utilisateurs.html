@@ -1,0 +1,28 @@
+{% extends "pointages/base.html" %}
+{% block titre %}Utilisateurs{% endblock %}
+{% block contenu %}
+<div class="entete-page">
+  <div>
+    <h1>Utilisateurs</h1>
+    <p class="sous-titre">Les <strong>administrateurs</strong> ont accès à tout. Les <strong>pointeurs</strong> pointent la journée en cours et créent des fiches employés (modifiables 24 h).</p>
+  </div>
+  <a class="bouton" href="{% url 'utilisateur_nouveau' %}">+ Nouveau compte</a>
+</div>
+<div class="carte tableau-wrap">
+  <table>
+    <thead><tr><th>Identifiant</th><th>Nom</th><th>Rôle</th><th>État</th><th>Dernière connexion</th><th></th></tr></thead>
+    <tbody>
+    {% for u in comptes %}
+      <tr>
+        <td><strong>{{ u.username }}</strong>{% if u == user %} <span class="etat gris">vous</span>{% endif %}</td>
+        <td>{{ u.first_name }} {{ u.last_name }}</td>
+        <td>{% if u.role == "admin" %}<span class="etat bleu">Administrateur{% if u.is_superuser %} principal{% endif %}</span>{% elif u.role == "pointeur" %}<span class="etat vert">Pointeur</span>{% else %}<span class="etat rouge">Aucun rôle</span>{% endif %}</td>
+        <td>{% if u.is_active %}<span class="etat vert">actif</span>{% else %}<span class="etat gris">désactivé</span>{% endif %}</td>
+        <td>{{ u.last_login|date:"d/m/Y H:i"|default:"jamais" }}</td>
+        <td><a class="bouton petit secondaire" href="{% url 'utilisateur_modifier' u.pk %}">Modifier</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

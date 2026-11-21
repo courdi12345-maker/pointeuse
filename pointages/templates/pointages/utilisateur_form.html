@@ -1,0 +1,18 @@
+{% extends "pointages/base.html" %}
+{% block titre %}{% if compte %}Compte {{ compte.username }}{% else %}Nouveau compte{% endif %}{% endblock %}
+{% block contenu %}
+<h1>{% if compte %}Compte « {{ compte.username }} »{% else %}Nouveau compte{% endif %}</h1>
+<p class="sous-titre">{% if compte.is_superuser %}Compte administrateur principal (créé à l'installation) : il garde tous les droits.{% else %}Un compte désactivé ne peut plus se connecter, mais son historique est conservé.{% endif %}</p>
+<div class="carte" style="max-width: 760px">
+  <form method="post" novalidate autocomplete="off">{% csrf_token %}
+    {% if form.non_field_errors %}<div class="alerte error">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+    <div class="form-grille">
+      {% for f in form %}{% include "pointages/_champ.html" %}{% endfor %}
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="bouton">Enregistrer</button>
+      <a class="bouton secondaire" href="{% url 'utilisateurs' %}">Annuler</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

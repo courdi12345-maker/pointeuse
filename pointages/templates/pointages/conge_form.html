@@ -1,0 +1,18 @@
+{% extends "pointages/base.html" %}
+{% block titre %}{% if conge %}Modifier un congé{% else %}Nouveau congé{% endif %}{% endblock %}
+{% block contenu %}
+<h1>{% if conge %}Modifier le congé{% else %}Nouveau congé{% endif %}</h1>
+<p class="sous-titre">Les jours de repos et les jours fériés sont exclus automatiquement du décompte.</p>
+<div class="carte" style="max-width: 760px">
+  <form method="post" novalidate>{% csrf_token %}
+    {% if form.non_field_errors %}<div class="alerte error">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+    <div class="form-grille">
+      {% for f in form %}{% include "pointages/_champ.html" %}{% endfor %}
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="bouton">Enregistrer</button>
+      <a class="bouton secondaire" href="{% url 'conges' %}">Annuler</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

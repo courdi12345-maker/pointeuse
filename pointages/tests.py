@@ -249,3 +249,66 @@ class SoldeFifoTests(Base):
         from .conges import acquis_annee
         self.p.date_entree = date(2026, 7, 1)
         self.assertEqual(acquis_annee(self.p, 2026), 9)
+
+
+class CongesPageTests(Base):
+    def test_ajout_chevauchement_et_avertissement(self):
+        self.client.force_login(self.admin)
+        r = self.client.post(reverse("conge_nouveau"), {"personne": self.p.pk, "type": "annuel",
+                                                        "debut": "2026-03-02", "fin": "2026-03-07"})
+        self.assertRedirects(r, reverse("conges"))
+        c = Conge.objects.get()
+        self.assertEqual((c.cree_par, c.jours_ouvres()), (self.admin, 6))
+        r = self.client.post(reverse("conge_nouveau"), {"personne": self.p.pk, "type": "maladie",
+                                                        "debut": "2026-03-05", "fin": "2026-03-10"})
+        self.assertContains(r, "chevauche")
+        r = self.client.post(reverse("conge_nouveau"), {"personne": self.p.pk, "type": "annuel",
+                                                        "debut": "2026-06-01", "fin": "2026-07-31"}, follow=True)
+        self.assertContains(r, "solde devient négatif")
+        r = self.client.post(reverse("conge_nouveau"), {"personne": self.p.pk, "type": "annuel",
+                                                        "debut": "2026-09-10", "fin": "2026-09-01"})
+        self.assertContains(r, "après la date de début")
+        for vue in ("liste", "soldes"):
+            self.assertEqual(self.client.get(reverse("conges") + "?vue=" + vue).status_code, 200)
+        self.client.post(reverse("conge_supprimer", args=[c.pk]))
+        self.assertFalse(Conge.objects.filter(pk=c.pk).exists())
+
+    def test_pointeur_interdit(self):
+        self.client.force_login(self.pointeur)
+        self.assertEqual(self.client.get(reverse("conges")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("utilisateurs")).status_code, 403)
+
+
+class UtilisateursTests(Base):
+    def test_creer_admin_et_pointeur(self):
+        self.client.force_login(self.admin)
+        r = self.client.post(reverse("utilisateur_nouveau"), {
+            "username": "chef", "role": "admin", "actif": "on",
+            "password1": "Mot-De-Passe-2026", "password2": "Mot-De-Passe-2026"})
+        self.assertRedirects(r, reverse("utilisateurs"))
+        chef = User.objects.get(username="chef")
+        self.assertTrue(chef.is_staff and chef.groups.filter(name="Administrateur").exists())
+        # Un administrateur (non super-utilisateur) peut ouvrir Vision RH et gérer les employés dans Paramètres
+        self.client.force_login(chef)
+        self.assertEqual(self.client.get(reverse("tableau_de_bord")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("admin:pointages_personne_changelist")).status_code, 200)
+        # Rétrogradé en pointeur
+        self.client.force_login(self.admin)
+        self.client.post(reverse("utilisateur_modifier", args=[chef.pk]), {"username": "chef", "role": "pointeur", "actif": "on"})
+        chef.refresh_from_db()
+        self.assertFalse(chef.is_staff)
+        self.assertTrue(chef.check_password("Mot-De-Passe-2026"))  # mot de passe inchangé si laissé vide
+        self.assertEqual(list(chef.groups.values_list("name", flat=True)), ["Pointeur"])
+
+    def test_erreurs(self):
+        self.client.force_login(self.admin)
+        r = self.client.post(reverse("utilisateur_nouveau"), {"username": "x", "role": "pointeur", "actif": "on"})
+        self.assertContains(r, "obligatoire")
+        r = self.client.post(reverse("utilisateur_nouveau"), {"username": "pointeur", "role": "pointeur",
+                                                              "password1": "Abc-12345-xy", "password2": "Abc-12345-xy"})
+        self.assertContains(r, "déjà utilisé")
+        r = self.client.post(reverse("utilisateur_nouveau"), {"username": "y", "role": "pointeur",
+                                                              "password1": "Abc-12345-xy", "password2": "autre"})
+        self.assertContains(r, "pas identiques")
+        r = self.client.post(reverse("utilisateur_modifier", args=[self.admin.pk]), {"username": "admin", "role": "pointeur"})
+        self.assertContains(r, "propres droits")
