@@ -10,7 +10,7 @@ avec lecteur de carte d'identité électronique (eID), écran LCD et LED.
 
 | Écran | Rôle | Contenu |
 |---|---|---|
-| **Vision RH** | Admin | Présents, absents, retards, sorties oubliées, congés en cours et à venir ; heures et masse salariale du mois avec comparaison au mois précédent ; ponctualité ; heures par jour, par ville et par service ; employés qui font le plus et le moins d'heures |
+| **Vision RH** | Admin | **Calendrier du mois** (présents, heures, retards, absents, congés de chaque jour) et **analyse détaillée du jour choisi** (navigation jour par jour) : pointages, absents, retards, congés ; sorties oubliées ; heures et masse salariale du mois avec comparaison au mois précédent ; ponctualité ; heures par ville et par service ; employés qui font le plus et le moins d'heures |
 | **Pointer** | Admin, pointeur | Scan du badge QR (caméra ou lecteur USB) ou du matricule : arrivée/sortie automatique ; saisie manuelle ; choix de la ville et du chantier |
 | **Pointages** | Admin, pointeur | Liste filtrable. Le pointeur ne voit que ses saisies et ne peut modifier que celles du jour ; l'admin peut tout modifier ou supprimer |
 | **Employés** | Admin, pointeur | Fiche complète (photo, CIN, CNSS, famille, poste, contrat, paie, RIB, pièce d'identité scannée). Le pointeur peut créer une fiche et la corriger pendant 24 h |

@@ -74,9 +74,31 @@ def accueil(request):
 
 @admin_requis
 def tableau_de_bord(request):
-    annee, mois = _mois_demande(request)
-    ctx = stats.tableau_de_bord(annee, mois)
-    ctx["mois"] = "%04d-%02d" % (annee, mois)
+    """Vision RH : une journée choisie (par défaut aujourd'hui) et son mois.
+
+    ?jour=AAAA-MM-JJ choisit la journée ; ?mois=AAAA-MM seul affiche ce mois
+    (journée = aujourd'hui si c'est le mois en cours, sinon le 1er du mois).
+    """
+    from datetime import date, timedelta
+
+    aujourd_hui = timezone.localdate()
+    try:
+        jour = datetime.strptime(request.GET.get("jour", ""), "%Y-%m-%d").date()
+    except ValueError:
+        jour = None
+    if jour is None:
+        annee, mois = _mois_demande(request)
+        jour = aujourd_hui if (annee, mois) == (aujourd_hui.year, aujourd_hui.month) else date(annee, mois, 1)
+    ctx = stats.tableau_de_bord(jour.year, jour.month, jour)
+    premier = jour.replace(day=1)
+    mois_prec = (premier - timedelta(days=1)).replace(day=1)
+    mois_suiv = (premier + timedelta(days=32)).replace(day=1)
+    ctx.update({
+        "jour": jour, "mois": "%04d-%02d" % (jour.year, jour.month),
+        "veille": jour - timedelta(days=1), "lendemain": jour + timedelta(days=1),
+        "mois_prec": mois_prec, "mois_suiv": mois_suiv,
+        "jours_semaine": ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"],
+    })
     return render(request, "pointages/tableau_de_bord.html", ctx)
 
 

@@ -197,3 +197,41 @@ a.tuile p { margin: 4px 0; }
   .fiche-paie:last-child { page-break-after: auto; break-after: auto; }
   .fiche-paie .net { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* --- Vision RH : navigation par jour et calendrier --- */
+.nav-jour { align-items: flex-end; }
+.grille-vision { display: grid; grid-template-columns: minmax(0, 470px) minmax(0, 1fr); gap: 18px; align-items: start; margin-bottom: 8px; }
+@media (max-width: 1100px) { .grille-vision { grid-template-columns: minmax(0, 1fr); } }
+.titre-jour { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 1.25rem; margin: 0 0 12px; }
+.chiffres-jour { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.chiffre .val small { font-size: .9rem; color: var(--gris); font-weight: 600; }
+
+.cal-entete { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.cal-entete h2 { margin: 0; }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal-titre { text-align: center; font-size: .75rem; font-weight: 600; color: var(--gris); padding: 2px 0; }
+.cal-jour { position: relative; display: flex; flex-direction: column; gap: 1px; min-height: 74px; padding: 4px 5px 7px;
+  border: 1px solid var(--bord); border-radius: 6px; background: #fff; color: var(--texte); text-decoration: none; overflow: hidden; }
+.cal-jour:hover { border-color: var(--bleu); background: var(--bleu-clair); }
+.cal-num { font-weight: 700; font-size: .9rem; }
+.cal-info { font-size: .72rem; line-height: 1.25; color: var(--gris); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-info strong { color: var(--texte); }
+.cal-pastilles { display: flex; flex-wrap: wrap; gap: 2px; margin-top: auto; }
+.pastille { display: inline-block; min-width: 17px; padding: 0 4px; border-radius: 99px; font-size: .68rem; font-weight: 700; text-align: center; line-height: 16px; }
+.pastille.orange { background: var(--orange-clair); color: var(--orange); }
+.pastille.rouge { background: var(--rouge-clair); color: var(--rouge); }
+.pastille.bleu { background: var(--bleu-clair); color: var(--bleu); }
+.cal-barre { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--bleu); opacity: .55; }
+.cal-jour.repos, .cal-jour.ferie { background: #f6f7f9; }
+.cal-jour.ferie .cal-info { color: var(--bleu); font-weight: 600; }
+.cal-jour.futur { opacity: .55; }
+.cal-jour.aujourdhui { border: 2px solid var(--orange); }
+.cal-jour.choisi { border: 2px solid var(--bleu); background: var(--bleu-clair); box-shadow: 0 0 0 2px rgba(31, 78, 121, .15); }
+.cal-vide { min-height: 74px; }
+.cal-legende { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .75rem; color: var(--gris); margin: 10px 0 0; }
+@media (max-width: 600px) {
+  .cal-jour, .cal-vide { min-height: 52px; padding: 3px; }
+  .cal-detail { display: none; }
+  .cal-info { font-size: .65rem; }
+  .pastille { min-width: 14px; font-size: .6rem; line-height: 14px; padding: 0 2px; }
+}

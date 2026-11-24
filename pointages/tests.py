@@ -430,3 +430,51 @@ class PaieTests(Base):
         self.client.force_login(self.pointeur)
         for nom in ("parametres", "sauvegardes", "fiches_de_paie"):
             self.assertEqual(self.client.get(reverse(nom)).status_code, 403)
+
+
+class VisionJourTests(Base):
+    def test_journee_passee_et_calendrier(self):
+        # Lundi 2 mars 2026 : 1 pointage en retard (service à 08:00, tolérance 10 min), 1 absent, 1 en congé
+        autre = Personne.objects.create(nom="Absent", prenoms="Ali")
+        conge = Personne.objects.create(nom="Vacances", prenoms="Sara")
+        Conge.objects.create(personne=conge, debut=date(2026, 3, 1), fin=date(2026, 3, 5))
+        Pointage.objects.create(personne=self.p, checkin=aware(2026, 3, 2, 8, 25), checkout=aware(2026, 3, 2, 12, 0))
+        Pointage.objects.create(personne=self.p, checkin=aware(2026, 3, 2, 13, 0), checkout=aware(2026, 3, 2, 17, 0))
+        JourFerie.objects.create(date=date(2026, 3, 3), nom="Test férié")
+        j = stats.journee(date(2026, 3, 2))
+        self.assertEqual((j["nb_pointes"], j["nb_attendus"]), (1, 3))
+        self.assertEqual([p.nom for p in j["absents"]], ["Absent"])
+        self.assertEqual(j["retards"][0]["minutes"], 25)
+        self.assertEqual((j["heures"], j["lignes"][0]["passages"]), ("7h35", 2))
+        self.assertEqual(j["ponctualite"], 0)
+        self.assertEqual(stats.journee(date(2026, 3, 3))["nature"], "ferie")
+        # Arrivée « tardive » un jour férié : ce n'est pas un retard
+        Pointage.objects.create(personne=self.p, checkin=aware(2026, 3, 3, 10, 0), checkout=aware(2026, 3, 3, 12, 0))
+        self.assertEqual(stats.journee(date(2026, 3, 3))["retards"], [])
+        self.assertEqual(stats.journee(date(2026, 3, 1))["nature"], "repos")  # dimanche
+
+        semaines = stats.calendrier(2026, 3, date(2026, 3, 2))
+        jours = {c["jour"]: c for s in semaines for c in s if c}
+        self.assertEqual(len(jours), 31)
+        self.assertIsNone(semaines[0][0])  # le 1er mars 2026 est un dimanche
+        c = jours[2]
+        self.assertEqual((c["pointes"], c["retards"], c["absents"], c["conges"], c["choisi"]), (1, 1, 1, 1, True))
+        self.assertEqual(jours[3]["nature"], "ferie")
+        self.assertIsNone(jours[3]["absents"])
+
+    def test_employe_pas_encore_entre_ni_sorti(self):
+        Personne.objects.create(nom="Futur", prenoms="X", date_entree=date(2026, 6, 1))
+        Personne.objects.create(nom="Parti", prenoms="Y", actif=False, date_sortie=date(2026, 2, 1))
+        noms = [p.nom for p in stats.journee(date(2026, 3, 2))["absents"]]
+        self.assertNotIn("Futur", noms)
+        self.assertNotIn("Parti", noms)
+
+    def test_page_navigation(self):
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("tableau_de_bord") + "?jour=2026-03-02")
+        self.assertEqual(r.context["jour"], date(2026, 3, 2))
+        self.assertEqual((r.context["veille"], r.context["lendemain"]), (date(2026, 3, 1), date(2026, 3, 3)))
+        self.assertContains(r, "cal-jour")
+        r = self.client.get(reverse("tableau_de_bord") + "?mois=2026-01")
+        self.assertEqual(r.context["jour"], date(2026, 1, 1))
+        self.assertEqual(self.client.get(reverse("tableau_de_bord") + "?jour=pas-une-date").status_code, 200)

@@ -153,34 +153,155 @@ def premieres_arrivees(pointages):
     return res
 
 
-def tableau_de_bord(annee, mois):
-    aujourd_hui = timezone.localdate()
-    actifs = list(Personne.objects.filter(actif=True).select_related("service", "ville"))
+def employes_attendus(jour):
+    """Employés en poste à cette date (entrés avant, pas encore sortis)."""
+    qs = Personne.objects.select_related("service", "ville").filter(
+        Q(date_entree__isnull=True) | Q(date_entree__lte=jour)).filter(
+        Q(date_sortie__isnull=True, actif=True) | Q(date_sortie__gte=jour))
+    return list(qs)
 
-    # --- Aujourd'hui
-    du_jour = list(_pointages_periode(aujourd_hui, aujourd_hui))
-    pointes = {p.personne_id for p in du_jour}
-    presents = [p for p in du_jour if not p.checkout]
-    en_conge = list(Conge.objects.filter(debut__lte=aujourd_hui, fin__gte=aujourd_hui)
-                    .select_related("personne"))
+
+def type_de_jour(jour, feries=None):
+    """(« ouvré » | « repos » | « férié », libellé)"""
+    from .models import JourFerie
+    if feries is None:
+        feries = {f.date: f.nom for f in JourFerie.objects.filter(date=jour)}
+    if jour in feries:
+        return "ferie", feries[jour]
+    if jour.weekday() in cfg("JOURS_REPOS"):
+        return "repos", "Jour de repos"
+    return "ouvre", ""
+
+
+def _retard(pers, jour, checkin):
+    limite = _limite_retard(pers, jour)
+    if checkin > limite:
+        return int((checkin - limite).total_seconds() // 60) + cfg("TOLERANCE_RETARD_MINUTES")
+    return 0
+
+
+def journee(jour):
+    """Analyse détaillée d'une journée."""
+    aujourd_hui = timezone.localdate()
+    attendus = employes_attendus(jour)
+    pointages = sorted(_pointages_periode(jour, jour), key=lambda p: p.checkin)
+    pointes = {p.personne_id for p in pointages}
+    ouverts = [p for p in pointages if not p.checkout]
+    en_conge = list(Conge.objects.filter(debut__lte=jour, fin__gte=jour).select_related("personne"))
     ids_conge = {c.personne_id for c in en_conge}
-    absents = [p for p in actifs if p.pk not in pointes and p.pk not in ids_conge]
-    retards_jour = []
-    for (pid, jour), (pers, checkin) in premieres_arrivees(du_jour).items():
-        limite = _limite_retard(pers, jour)
-        if checkin > limite:
-            retards_jour.append({"personne": pers, "arrivee": checkin,
-                                 "minutes": int((checkin - limite).total_seconds() // 60) + cfg("TOLERANCE_RETARD_MINUTES")})
-    retards_jour.sort(key=lambda r: -r["minutes"])
+    nature, libelle = type_de_jour(jour)
+    futur = jour > aujourd_hui
+    absents = [] if (futur or nature != "ouvre") else [
+        p for p in attendus if p.pk not in pointes and p.pk not in ids_conge]
+
+    premieres = premieres_arrivees(pointages)
+    retards = []
+    for (pid, j), (pers, checkin) in premieres.items():
+        # Pas de retard un jour férié ou de repos : aucune heure d'arrivée n'est prévue.
+        minutes = _retard(pers, j, checkin) if nature == "ouvre" else 0
+        if minutes:
+            retards.append({"personne": pers, "arrivee": checkin, "minutes": minutes})
+    retards.sort(key=lambda r: -r["minutes"])
+    ids_retard = {r["personne"].pk for r in retards}
+
+    # Une ligne par employé ayant pointé : première arrivée, dernière sortie, total travaillé
+    lignes = {}
+    for p in pointages:
+        l = lignes.setdefault(p.personne_id, {"personne": p.personne, "arrivee": p.checkin, "sortie": None,
+                                              "td": timedelta(), "passages": 0, "en_cours": False,
+                                              "service": p.service})
+        l["passages"] += 1
+        if p.checkout:
+            l["td"] += p.checkout - p.checkin
+            l["sortie"] = max(l["sortie"], p.checkout) if l["sortie"] else p.checkout
+        else:
+            l["en_cours"] = True
+    for l in lignes.values():
+        l["duree"] = format_heures(heures(l["td"]))
+        l["retard"] = next((r["minutes"] for r in retards if r["personne"].pk == l["personne"].pk), 0)
+    total = sum((l["td"] for l in lignes.values()), timedelta())
+    nb_premieres = len(premieres)
+    return {
+        "jour": jour, "est_aujourd_hui": jour == aujourd_hui, "futur": futur,
+        "nature": nature, "libelle": libelle,
+        "nb_attendus": len(attendus), "nb_pointes": len(pointes),
+        "presents": ouverts, "nb_presents": len({p.personne_id for p in ouverts}),
+        "nb_sortis": len(pointes) - len({p.personne_id for p in ouverts}),
+        "absents": absents, "en_conge": en_conge, "retards": retards,
+        "heures": format_heures(heures(total)),
+        "ponctualite": (int((nb_premieres - len(ids_retard)) * 100 / nb_premieres)
+                        if nb_premieres and nature == "ouvre" else None),
+        "lignes": sorted(lignes.values(), key=lambda l: l["arrivee"]),
+    }
+
+
+def calendrier(annee, mois, jour_choisi=None):
+    """Semaines du mois (lundi → dimanche), avec les chiffres de chaque jour."""
+    from .models import JourFerie
+
+    debut, fin = bornes_mois(annee, mois)
+    aujourd_hui = timezone.localdate()
+    feries = {f.date: f.nom for f in JourFerie.objects.filter(date__range=(debut, fin))}
+    par_jour = defaultdict(lambda: {"pointes": set(), "td": timedelta(), "retards": 0})
+    pts = list(_pointages_periode(debut, fin))
+    for p in pts:
+        d = par_jour[timezone.localtime(p.checkin).date()]
+        d["pointes"].add(p.personne_id)
+        if p.checkout:
+            d["td"] += p.checkout - p.checkin
+    for (pid, j), (pers, checkin) in premieres_arrivees(pts).items():
+        if type_de_jour(j, feries)[0] == "ouvre" and _retard(pers, j, checkin):
+            par_jour[j]["retards"] += 1
+    conges = list(Conge.objects.filter(debut__lte=fin, fin__gte=debut))
+    personnes = list(Personne.objects.only("pk", "actif", "date_entree", "date_sortie"))
+
+    def attendus(j):
+        return [p.pk for p in personnes
+                if (p.date_entree is None or p.date_entree <= j)
+                and ((p.date_sortie is None and p.actif) or (p.date_sortie and p.date_sortie >= j))]
+
+    max_h = max((heures(d["td"]) for d in par_jour.values()), default=0) or 1
+    semaines, semaine = [], [None] * debut.weekday()
+    j = debut
+    while j <= fin:
+        d = par_jour.get(j, {"pointes": set(), "td": timedelta(), "retards": 0})
+        nature, libelle = type_de_jour(j, feries)
+        en_conge = {c.personne_id for c in conges if c.debut <= j <= c.fin}
+        ids = attendus(j)
+        absents = (len([i for i in ids if i not in d["pointes"] and i not in en_conge])
+                   if nature == "ouvre" and j <= aujourd_hui else None)
+        h = heures(d["td"])
+        semaine.append({
+            "date": j, "jour": j.day, "nature": nature, "libelle": libelle,
+            "futur": j > aujourd_hui, "aujourd_hui": j == aujourd_hui, "choisi": j == jour_choisi,
+            "pointes": len(d["pointes"]), "attendus": len(ids), "heures": format_heures(h) if h else "",
+            "pct": int(h * 100 / max_h), "retards": d["retards"], "absents": absents, "conges": len(en_conge),
+        })
+        if len(semaine) == 7:
+            semaines.append(semaine)
+            semaine = []
+        j += timedelta(days=1)
+    if semaine:
+        semaines.append(semaine + [None] * (7 - len(semaine)))
+    return semaines
+
+
+def tableau_de_bord(annee, mois, jour=None):
+    aujourd_hui = timezone.localdate()
+    jour = jour or aujourd_hui
+    actifs = list(Personne.objects.filter(actif=True).select_related("service", "ville"))
     sorties_oubliees = list(Pointage.objects.filter(checkout__isnull=True, checkin__date__lt=aujourd_hui)
                             .select_related("personne", "service").order_by("-checkin")[:50])
     conges_a_venir = list(Conge.objects.filter(debut__gt=aujourd_hui, debut__lte=aujourd_hui + timedelta(days=30))
                           .select_related("personne").order_by("debut"))
+    j = journee(jour)
 
     # --- Mois choisi
+    from .models import JourFerie
     debut, fin = bornes_mois(annee, mois)
+    feries_mois = {f.date: f.nom for f in JourFerie.objects.filter(date__range=(debut, fin))}
     pts_mois = list(_pointages_periode(debut, fin))
-    par_ville, par_service, par_jour = defaultdict(Decimal), defaultdict(Decimal), defaultdict(Decimal)
+    par_ville, par_service = defaultdict(Decimal), defaultdict(Decimal)
     par_personne = defaultdict(Decimal)
     for p in pts_mois:
         if not p.checkout:
@@ -188,15 +309,16 @@ def tableau_de_bord(annee, mois):
         h = heures(p.checkout - p.checkin)
         par_ville[p.ville.nom if p.ville else "Sans ville"] += h
         par_service[p.service.nom if p.service else "Sans service"] += h
-        par_jour[timezone.localtime(p.checkin).day] += h
         par_personne[p.personne] += h
 
     for pers in actifs:
         par_personne.setdefault(pers, Decimal(0))
 
     a_l_heure = en_retard = 0
-    for (pid, jour), (pers, checkin) in premieres_arrivees(pts_mois).items():
-        if checkin > _limite_retard(pers, jour):
+    for (pid, j_arr), (pers, checkin) in premieres_arrivees(pts_mois).items():
+        if type_de_jour(j_arr, feries_mois)[0] != "ouvre":
+            continue
+        if checkin > _limite_retard(pers, j_arr):
             en_retard += 1
         else:
             a_l_heure += 1
@@ -218,16 +340,9 @@ def tableau_de_bord(annee, mois):
         return [{"nom": k, "heures": format_heures(v), "pct": int(v * 100 / m)}
                 for k, v in sorted(d.items(), key=lambda x: -x[1])]
 
-    nb_jours = calendar.monthrange(annee, mois)[1]
-    m_jour = max(par_jour.values(), default=0) or 1
-    histo = [{"jour": j, "heures": format_heures(par_jour[j]), "pct": int(par_jour[j] * 100 / m_jour)}
-             for j in range(1, nb_jours + 1)]
-
     return {
-        "aujourd_hui": aujourd_hui,
-        "nb_actifs": len(actifs), "nb_pointes": len(pointes), "presents": presents,
-        "nb_sortis": len(pointes) - len({p.personne_id for p in presents}),
-        "absents": absents, "en_conge": en_conge, "retards_jour": retards_jour,
+        "aujourd_hui": aujourd_hui, "j": j, "calendrier": calendrier(annee, mois, jour),
+        "presents": j["presents"], "absents": j["absents"],
         "sorties_oubliees": sorties_oubliees, "conges_a_venir": conges_a_venir,
         "heures_mois": bilan["total"]["heures_txt"], "heures_prec": bilan_prec["total"]["heures_txt"],
         "var_heures": variation(bilan["total"]["heures"], bilan_prec["total"]["heures"]),
@@ -236,7 +351,7 @@ def tableau_de_bord(annee, mois):
         "var_cout": variation(bilan["total"]["reel"], bilan_prec["total"]["reel"]),
         "ponctualite": int(a_l_heure * 100 / total_arrivees) if total_arrivees else None,
         "a_l_heure": a_l_heure, "en_retard": en_retard,
-        "par_ville": barres(par_ville), "par_service": barres(par_service), "histo": histo,
+        "par_ville": barres(par_ville), "par_service": barres(par_service),
         "top": [(p, format_heures(h)) for p, h in classement[:5]],
         "flop": [(p, format_heures(h)) for p, h in classement[::-1][:5]],
     }
