@@ -1,0 +1,22 @@
+# Mise en ligne en un clic sur Render : https://render.com → New → Blueprint → ce dépôt.
+# Voir EN_LIGNE.md pour le pas à pas.
+services:
+  - type: web
+    name: pointage-max
+    runtime: docker
+    plan: starter          # le disque persistant n'existe pas sur l'offre gratuite
+    region: frankfurt      # le plus proche du Maroc
+    healthCheckPath: /sante/
+    disk:
+      name: donnees
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: POINTAGE_SECRET_KEY
+        generateValue: true
+      - key: POINTAGE_ADMIN_USER
+        value: admin
+      - key: POINTAGE_ADMIN_PASSWORD
+        sync: false          # Render vous le demande à l'installation (10 caractères minimum)
+      - key: POINTAGE_TZ
+        value: Africa/Casablanca

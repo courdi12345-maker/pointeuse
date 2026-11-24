@@ -6,7 +6,7 @@
   <h1>⏱ {{ APP.NOM }}</h1>
   <p class="sous-titre" style="text-align:center">Pointage et gestion des employés</p>
   <form method="post">{% csrf_token %}
-    {% if form.errors %}<div class="alerte error">Identifiant ou mot de passe incorrect.</div>{% endif %}
+    {% for e in form.non_field_errors %}<div class="alerte error">{{ e }}</div>{% empty %}{% if form.errors %}<div class="alerte error">Identifiant ou mot de passe incorrect.</div>{% endif %}{% endfor %}
     <div class="champ"><label for="id_username">Identifiant</label>{{ form.username }}</div>
     <div class="champ"><label for="id_password">Mot de passe</label>{{ form.password }}</div>
     <input type="hidden" name="next" value="{{ next }}">
