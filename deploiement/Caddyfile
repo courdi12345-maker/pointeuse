@@ -1,0 +1,18 @@
+# Pointage Max en HTTPS sur le réseau local (nécessaire pour la caméra des téléphones).
+# Les certificats sont créés localement par Caddy : pas besoin d'Internet ni de nom de domaine.
+{
+	local_certs
+}
+
+https://@IP@, https://@NOM@.local, https://localhost {
+	tls internal
+	encode gzip
+	request_body {
+		max_size 50MB
+	}
+	reverse_proxy 127.0.0.1:8000
+}
+
+http://@IP@, http://@NOM@.local {
+	redir https://{host}{uri} permanent
+}

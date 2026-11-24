@@ -1,0 +1,37 @@
+{% extends "pointages/base.html" %}
+{% block titre %}Paramètres{% endblock %}
+{% block contenu %}
+<h1>Paramètres</h1>
+<p class="sous-titre">Réglages de {{ APP.NOM }}.</p>
+<div class="grille grille-3">
+  <a class="carte tuile" href="{% url 'entreprise' %}">
+    <h2>🏢 Entreprise</h2>
+    <p>{{ entreprise.raison_sociale }}{% if entreprise.ville %} · {{ entreprise.ville }}{% endif %}</p>
+    <p class="sous-titre">Raison sociale, adresse, ICE, CNSS et logo, affichés sur les fiches de paie.</p>
+  </a>
+  <a class="carte tuile" href="{% url 'utilisateurs' %}">
+    <h2>👥 Utilisateurs</h2>
+    <p class="sous-titre">Comptes administrateur et pointeur, rôles et mots de passe.</p>
+  </a>
+  <a class="carte tuile" href="{% url 'sauvegardes' %}">
+    <h2>💾 Sauvegardes</h2>
+    <p>{% if derniere_sauvegarde %}Dernière : {{ derniere_sauvegarde.date|date:"d/m/Y H:i" }}{% else %}<span class="etat rouge">Aucune sauvegarde</span>{% endif %}</p>
+    <p class="sous-titre">Créer, télécharger ou restaurer une sauvegarde.</p>
+  </a>
+  <a class="carte tuile" href="{% url 'admin:pointages_ville_changelist' %}">
+    <h2>📍 Villes</h2><p class="sous-titre">Les villes où travaillent vos équipes.</p>
+  </a>
+  <a class="carte tuile" href="{% url 'admin:pointages_service_changelist' %}">
+    <h2>🏗️ Services et chantiers</h2><p class="sous-titre">Avec leur heure de début, qui sert au calcul des retards.</p>
+  </a>
+  <a class="carte tuile" href="{% url 'admin:pointages_typecontrat_changelist' %}">
+    <h2>📄 Types de contrat</h2><p class="sous-titre">CDI, CDD, intérim…</p>
+  </a>
+  <a class="carte tuile" href="{% url 'admin:pointages_jourferie_changelist' %}">
+    <h2>📅 Jours fériés</h2><p class="sous-titre">Non décomptés des congés. Ajoutez chaque année les fêtes religieuses.</p>
+  </a>
+  <a class="carte tuile" href="{% url 'admin:index' %}">
+    <h2>⚙️ Administration avancée</h2><p class="sous-titre">Accès direct à toutes les données (pour les cas particuliers).</p>
+  </a>
+</div>
+{% endblock %}

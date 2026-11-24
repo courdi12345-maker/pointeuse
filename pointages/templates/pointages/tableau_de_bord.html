@@ -4,77 +4,136 @@
 <div class="entete-page">
   <div>
     <h1>Vision RH</h1>
-    <p class="sous-titre">Aujourd'hui, {{ aujourd_hui|date:"l j F Y" }}</p>
+    <p class="sous-titre">Cliquez sur un jour du calendrier pour voir son analyse détaillée.</p>
   </div>
-  <form class="filtres" method="get">
-    <div><label for="mois">Mois analysé</label><input type="month" id="mois" name="mois" value="{{ mois }}"></div>
+  <form class="filtres nav-jour" method="get">
+    <a class="bouton secondaire" href="?jour={{ veille|date:'Y-m-d' }}" title="Jour précédent">◀</a>
+    <div><label for="jour">Journée</label><input type="date" id="jour" name="jour" value="{{ jour|date:'Y-m-d' }}"></div>
     <button class="bouton">Afficher</button>
+    <a class="bouton secondaire" href="?jour={{ lendemain|date:'Y-m-d' }}" title="Jour suivant">▶</a>
+    {% if not j.est_aujourd_hui %}<a class="bouton secondaire" href="?">Aujourd'hui</a>{% endif %}
   </form>
 </div>
 
-<h2>Aujourd'hui</h2>
-<div class="chiffres">
-  <div class="chiffre"><div class="val">{{ nb_actifs }}</div><div class="lib">Employés actifs</div></div>
-  <div class="chiffre vert"><div class="val">{{ presents|length }}</div><div class="lib">Présents maintenant</div></div>
-  <div class="chiffre"><div class="val">{{ nb_pointes }}</div><div class="lib">Ont pointé aujourd'hui</div></div>
-  <div class="chiffre rouge"><div class="val">{{ absents|length }}</div><div class="lib">Absents</div></div>
-  <div class="chiffre orange"><div class="val">{{ retards_jour|length }}</div><div class="lib">En retard</div></div>
-  <div class="chiffre"><div class="val">{{ en_conge|length }}</div><div class="lib">En congé</div></div>
+<div class="grille-vision">
+  <!-- Calendrier du mois -->
+  <div class="carte">
+    <div class="cal-entete">
+      <a class="bouton petit secondaire" href="?mois={{ mois_prec|date:'Y-m' }}" title="Mois précédent">◀</a>
+      <h2>{{ jour|date:"F Y"|capfirst }}</h2>
+      <a class="bouton petit secondaire" href="?mois={{ mois_suiv|date:'Y-m' }}" title="Mois suivant">▶</a>
+    </div>
+    <div class="cal">
+      {% for n in jours_semaine %}<div class="cal-titre">{{ n }}</div>{% endfor %}
+      {% for semaine in calendrier %}{% for c in semaine %}
+        {% if c %}
+        <a class="cal-jour {{ c.nature }}{% if c.futur %} futur{% endif %}{% if c.aujourd_hui %} aujourdhui{% endif %}{% if c.choisi %} choisi{% endif %}"
+           href="?jour={{ c.date|date:'Y-m-d' }}"
+           title="{{ c.date|date:'l j F' }}{% if c.libelle %} — {{ c.libelle }}{% endif %}{% if c.pointes %} — {{ c.pointes }} ont pointé, {{ c.heures }}{% endif %}{% if c.retards %}, {{ c.retards }} retard(s){% endif %}{% if c.absents %}, {{ c.absents }} absent(s){% endif %}">
+          <span class="cal-num">{{ c.jour }}</span>
+          {% if c.nature == "ferie" %}<span class="cal-info">Férié</span>
+          {% elif c.pointes %}
+            <span class="cal-info"><strong>{{ c.pointes }}</strong><span class="cal-detail">/{{ c.attendus }}</span> 👤</span>
+            <span class="cal-info cal-detail">{{ c.heures }}</span>
+          {% elif c.nature == "repos" %}<span class="cal-info">Repos</span>{% endif %}
+          <span class="cal-pastilles">
+            {% if c.retards %}<span class="pastille orange" title="Retards">{{ c.retards }}</span>{% endif %}
+            {% if c.absents %}<span class="pastille rouge" title="Absents">{{ c.absents }}</span>{% endif %}
+            {% if c.conges %}<span class="pastille bleu" title="En congé">{{ c.conges }}</span>{% endif %}
+          </span>
+          {% if c.pct %}<span class="cal-barre" style="width: {{ c.pct }}%"></span>{% endif %}
+        </a>
+        {% else %}<div class="cal-vide"></div>{% endif %}
+      {% endfor %}{% endfor %}
+    </div>
+    <p class="cal-legende">
+      <span><strong>8</strong>/12 👤 ont pointé / attendus</span>
+      <span><span class="pastille orange">2</span> retards</span>
+      <span><span class="pastille rouge">1</span> absents</span>
+      <span><span class="pastille bleu">1</span> en congé</span>
+    </p>
+  </div>
+
+  <!-- Journée choisie -->
+  <div>
+    <h2 class="titre-jour">
+      {% if j.est_aujourd_hui %}Aujourd'hui, {{ jour|date:"l j F Y" }}{% else %}{{ jour|date:"l j F Y"|capfirst }}{% endif %}
+      {% if j.nature == "ferie" %}<span class="etat bleu">Férié : {{ j.libelle }}</span>{% elif j.nature == "repos" %}<span class="etat gris">Jour de repos</span>{% endif %}
+      {% if j.futur %}<span class="etat gris">à venir</span>{% endif %}
+    </h2>
+    <div class="chiffres chiffres-jour">
+      <div class="chiffre"><div class="val">{{ j.nb_pointes }}<small>/{{ j.nb_attendus }}</small></div><div class="lib">Ont pointé</div></div>
+      <div class="chiffre vert"><div class="val">{{ j.nb_presents }}</div><div class="lib">{% if j.est_aujourd_hui %}Présents maintenant{% else %}Sans sortie{% endif %}</div></div>
+      <div class="chiffre rouge"><div class="val">{% if j.futur or j.nature != "ouvre" %}—{% else %}{{ j.absents|length }}{% endif %}</div><div class="lib">Absents</div></div>
+      <div class="chiffre orange"><div class="val">{{ j.retards|length }}</div><div class="lib">En retard</div></div>
+      <div class="chiffre"><div class="val">{{ j.en_conge|length }}</div><div class="lib">En congé</div></div>
+      <div class="chiffre"><div class="val">{{ j.heures }}</div><div class="lib">Heures{% if j.ponctualite is not None %} · ponctualité {{ j.ponctualite }} %{% endif %}</div></div>
+    </div>
+
+    <div class="carte tableau-wrap">
+      <h2>Pointages de la journée</h2>
+      <table>
+        <thead><tr><th>Employé</th><th>Service</th><th>Arrivée</th><th>Sortie</th><th>Durée</th><th></th></tr></thead>
+        <tbody>
+        {% for l in j.lignes %}
+          <tr>
+            <td><a href="{% url 'employe_fiche' l.personne.pk %}">{{ l.personne }}</a></td>
+            <td>{{ l.service|default:"—" }}</td>
+            <td>{{ l.arrivee|time:"H:i" }}{% if l.retard %} <span class="etat orange">+{{ l.retard }} min</span>{% endif %}</td>
+            <td>{% if l.en_cours %}{% if j.est_aujourd_hui %}<span class="etat vert">présent</span>{% else %}<span class="etat rouge">pas de sortie</span>{% endif %}{% elif l.sortie %}{{ l.sortie|time:"H:i" }}{% endif %}</td>
+            <td>{{ l.duree }}{% if l.passages > 1 %} <span class="sous-titre">({{ l.passages }} passages)</span>{% endif %}</td>
+            <td><a class="bouton petit secondaire" href="{% url 'pointages_liste' %}?q={{ l.personne.matricule }}&du={{ jour|date:'Y-m-d' }}&au={{ jour|date:'Y-m-d' }}">Détail</a></td>
+          </tr>
+        {% empty %}<tr><td colspan="6" class="vide">{% if j.futur %}Journée à venir.{% else %}Aucun pointage ce jour-là.{% endif %}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grille grille-3">
+      <div class="carte">
+        <h2>🔴 Absents</h2>
+        <ul class="liste-simple">
+          {% for p in j.absents|slice:":20" %}<li><a href="{% url 'employe_fiche' p.pk %}">{{ p }}</a><span class="etat gris">{{ p.service|default:"—" }}</span></li>
+          {% empty %}<li class="vide">{% if j.futur %}Journée à venir.{% elif j.nature != "ouvre" %}Journée non travaillée.{% else %}Aucun absent.{% endif %}</li>{% endfor %}
+          {% if j.absents|length > 20 %}<li class="vide">… et {{ j.absents|length|add:"-20" }} autres</li>{% endif %}
+        </ul>
+      </div>
+      <div class="carte">
+        <h2>⏰ Retards</h2>
+        <ul class="liste-simple">
+          {% for r in j.retards %}<li><a href="{% url 'employe_fiche' r.personne.pk %}">{{ r.personne }}</a><span>{{ r.arrivee|time:"H:i" }} <span class="etat orange">+{{ r.minutes }} min</span></span></li>
+          {% empty %}<li class="vide">Aucun retard.</li>{% endfor %}
+        </ul>
+      </div>
+      <div class="carte">
+        <h2>🏖️ En congé</h2>
+        <ul class="liste-simple">
+          {% for c in j.en_conge %}<li><a href="{% url 'employe_fiche' c.personne.pk %}">{{ c.personne }}</a><span><span class="etat bleu">{{ c.get_type_display }}</span> jusqu'au {{ c.fin|date:"d/m" }}</span></li>
+          {% empty %}<li class="vide">Personne en congé.</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
 </div>
 
-<div class="grille grille-3">
+<div class="grille grille-2">
   <div class="carte">
-    <h2>🟢 Présents (sans sortie)</h2>
+    <h2>⚠️ Sorties oubliées (tous les jours passés)</h2>
     <ul class="liste-simple">
-      {% for p in presents %}
-      <li><a href="{% url 'employe_fiche' p.personne.pk %}">{{ p.personne }}</a><span>depuis {{ p.checkin|time:"H:i" }}{% if p.service %} · {{ p.service }}{% endif %}</span></li>
-      {% empty %}<li class="vide">Personne n'est présent pour le moment.</li>{% endfor %}
-    </ul>
-  </div>
-  <div class="carte">
-    <h2>🔴 Absents</h2>
-    <ul class="liste-simple">
-      {% for p in absents|slice:":15" %}
-      <li><a href="{% url 'employe_fiche' p.pk %}">{{ p }}</a><span class="etat gris">{{ p.service|default:"—" }}</span></li>
-      {% empty %}<li class="vide">Aucun absent.</li>{% endfor %}
-      {% if absents|length > 15 %}<li class="vide">… et {{ absents|length|add:"-15" }} autres</li>{% endif %}
-    </ul>
-  </div>
-  <div class="carte">
-    <h2>⏰ Retards du jour</h2>
-    <ul class="liste-simple">
-      {% for r in retards_jour %}
-      <li><a href="{% url 'employe_fiche' r.personne.pk %}">{{ r.personne }}</a><span>{{ r.arrivee|time:"H:i" }} <span class="etat orange">+{{ r.minutes }} min</span></span></li>
-      {% empty %}<li class="vide">Aucun retard aujourd'hui.</li>{% endfor %}
-    </ul>
-  </div>
-  <div class="carte">
-    <h2>⚠️ Sorties oubliées</h2>
-    <ul class="liste-simple">
-      {% for p in sorties_oubliees %}
-      <li><a href="{% url 'pointage_modifier' p.pk %}">{{ p.personne }}</a><span>arrivé le {{ p.checkin|date:"d/m H:i" }} <span class="etat rouge">pas de sortie</span></span></li>
+      {% for p in sorties_oubliees %}<li><a href="{% url 'pointage_modifier' p.pk %}">{{ p.personne }}</a><span>arrivé le {{ p.checkin|date:"d/m H:i" }} <span class="etat rouge">pas de sortie</span></span></li>
       {% empty %}<li class="vide">Aucune sortie oubliée.</li>{% endfor %}
-    </ul>
-  </div>
-  <div class="carte">
-    <h2>🏖️ En congé aujourd'hui</h2>
-    <ul class="liste-simple">
-      {% for c in en_conge %}
-      <li><a href="{% url 'employe_fiche' c.personne.pk %}">{{ c.personne }}</a><span><span class="etat bleu">{{ c.get_type_display }}</span> jusqu'au {{ c.fin|date:"d/m" }}</span></li>
-      {% empty %}<li class="vide">Personne n'est en congé.</li>{% endfor %}
     </ul>
   </div>
   <div class="carte">
     <h2>📅 Congés à venir (30 jours)</h2>
     <ul class="liste-simple">
-      {% for c in conges_a_venir %}
-      <li><a href="{% url 'employe_fiche' c.personne.pk %}">{{ c.personne }}</a><span>du {{ c.debut|date:"d/m" }} au {{ c.fin|date:"d/m" }} · {{ c.jours_ouvres }} j</span></li>
+      {% for c in conges_a_venir %}<li><a href="{% url 'employe_fiche' c.personne.pk %}">{{ c.personne }}</a><span>du {{ c.debut|date:"d/m" }} au {{ c.fin|date:"d/m" }} · {{ c.jours_ouvres }} j</span></li>
       {% empty %}<li class="vide">Aucun congé prévu.</li>{% endfor %}
     </ul>
   </div>
 </div>
 
-<h2>Le mois {{ mois }}</h2>
+<h2>Le mois de {{ jour|date:"F Y" }}</h2>
 <div class="chiffres">
   <div class="chiffre">
     <div class="val">{{ heures_mois }}</div><div class="lib">Heures travaillées</div>
@@ -86,15 +145,9 @@
   </div>
   <div class="chiffre"><div class="val">{{ cout_theorique|floatformat:"0g" }} {{ APP.DEVISE }}</div><div class="lib">Masse salariale théorique</div></div>
   <div class="chiffre orange">
-    <div class="val">{% if ponctualite is not None %}{{ ponctualite }} %{% else %}—{% endif %}</div><div class="lib">Ponctualité</div>
+    <div class="val">{% if ponctualite is not None %}{{ ponctualite }} %{% else %}—{% endif %}</div><div class="lib">Ponctualité du mois</div>
     <div class="var">{{ a_l_heure }} à l'heure · {{ en_retard }} en retard</div>
   </div>
-</div>
-
-<div class="carte">
-  <h2>Heures par jour</h2>
-  <div class="histo">{% for j in histo %}<div style="height: {{ j.pct }}%" title="{{ j.jour }} : {{ j.heures }}"></div>{% endfor %}</div>
-  <div class="histo-axe">{% for j in histo %}<span>{% if j.jour == 1 or j.jour|divisibleby:5 %}{{ j.jour }}{% endif %}</span>{% endfor %}</div>
 </div>
 
 <div class="grille grille-2">

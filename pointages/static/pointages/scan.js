@@ -85,7 +85,9 @@
       return;
     }
     if (!window.isSecureContext) {
-      info.textContent = "La caméra ne fonctionne qu'en HTTPS (ou sur localhost). Utilisez le champ ci-dessus ou un lecteur USB.";
+      info.textContent = "La caméra ne fonctionne qu'en HTTPS (ou sur cet ordinateur via 127.0.0.1). " +
+        "Installez Pointage Max avec « bash install.sh --https » et ouvrez l'adresse en https://, " +
+        "ou utilisez le champ ci-dessus avec un lecteur QR USB.";
       return;
     }
     if (typeof Html5Qrcode === "undefined") {

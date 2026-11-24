@@ -1,0 +1,15 @@
+{% extends "pointages/base.html" %}
+{% block titre %}Entreprise{% endblock %}
+{% block contenu %}
+<h1>Entreprise</h1>
+<p class="sous-titre">Ces informations apparaissent en haut des fiches de paie.</p>
+<div class="carte" style="max-width: 860px">
+  <form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+    <div class="form-grille">{% for f in form %}{% include "pointages/_champ.html" %}{% endfor %}</div>
+    <div class="actions" style="margin-top:14px">
+      <button class="bouton">Enregistrer</button>
+      <a class="bouton secondaire" href="{% url 'parametres' %}">Annuler</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

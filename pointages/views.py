@@ -74,9 +74,31 @@ def accueil(request):
 
 @admin_requis
 def tableau_de_bord(request):
-    annee, mois = _mois_demande(request)
-    ctx = stats.tableau_de_bord(annee, mois)
-    ctx["mois"] = "%04d-%02d" % (annee, mois)
+    """Vision RH : une journée choisie (par défaut aujourd'hui) et son mois.
+
+    ?jour=AAAA-MM-JJ choisit la journée ; ?mois=AAAA-MM seul affiche ce mois
+    (journée = aujourd'hui si c'est le mois en cours, sinon le 1er du mois).
+    """
+    from datetime import date, timedelta
+
+    aujourd_hui = timezone.localdate()
+    try:
+        jour = datetime.strptime(request.GET.get("jour", ""), "%Y-%m-%d").date()
+    except ValueError:
+        jour = None
+    if jour is None:
+        annee, mois = _mois_demande(request)
+        jour = aujourd_hui if (annee, mois) == (aujourd_hui.year, aujourd_hui.month) else date(annee, mois, 1)
+    ctx = stats.tableau_de_bord(jour.year, jour.month, jour)
+    premier = jour.replace(day=1)
+    mois_prec = (premier - timedelta(days=1)).replace(day=1)
+    mois_suiv = (premier + timedelta(days=32)).replace(day=1)
+    ctx.update({
+        "jour": jour, "mois": "%04d-%02d" % (jour.year, jour.month),
+        "veille": jour - timedelta(days=1), "lendemain": jour + timedelta(days=1),
+        "mois_prec": mois_prec, "mois_suiv": mois_suiv,
+        "jours_semaine": ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"],
+    })
     return render(request, "pointages/tableau_de_bord.html", ctx)
 
 
@@ -96,7 +118,7 @@ def bilan(request):
         return _bilan_xlsx(b, nom, annee, mois)
     return render(request, "pointages/bilan.html", {
         "b": b, "form": form, "mois": "%04d-%02d" % (annee, mois),
-        "query": request.GET.urlencode(),
+        "query": request.GET.urlencode() or "mois=%04d-%02d" % (annee, mois),
     })
 
 
@@ -558,3 +580,117 @@ def utilisateur_form(request, pk=None):
         messages.success(request, "Compte « %s » enregistré." % compte.username)
         return redirect("utilisateurs")
     return render(request, "pointages/utilisateur_form.html", {"form": form, "compte": compte})
+
+
+# ---------------------------------------------------------------------------
+# Paramètres, entreprise et sauvegardes
+# ---------------------------------------------------------------------------
+
+@admin_requis
+def parametres(request):
+    from .models import Entreprise
+    from . import sauvegardes as sv
+
+    liste = sv.lister()
+    return render(request, "pointages/parametres.html", {
+        "entreprise": Entreprise.courante(), "derniere_sauvegarde": liste[0] if liste else None,
+    })
+
+
+@admin_requis
+def entreprise(request):
+    from .forms import EntrepriseForm
+    from .models import Entreprise
+
+    form = EntrepriseForm(request.POST or None, request.FILES or None, instance=Entreprise.courante())
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Informations de l'entreprise enregistrées.")
+        return redirect("parametres")
+    return render(request, "pointages/entreprise.html", {"form": form})
+
+
+@admin_requis
+def sauvegardes(request):
+    from . import sauvegardes as sv
+
+    if request.method == "POST":
+        action = request.POST.get("action")
+        try:
+            if action == "creer":
+                chemin = sv.creer("manuelle")
+                messages.success(request, "Sauvegarde créée : %s" % chemin.name)
+            elif action == "restaurer":
+                if request.POST.get("confirmation") != "RESTAURER":
+                    raise sv.SauvegardeInvalide("tapez RESTAURER en majuscules pour confirmer")
+                source = request.FILES.get("fichier") or sv.chemin_existant(request.POST.get("nom"))
+                infos, securite = sv.restaurer(source)
+                messages.success(request, "Restauration terminée : %s employés, %s pointages. L'état précédent est "
+                                          "conservé dans la sauvegarde %s. Reconnectez-vous."
+                                 % (infos["employes"], infos["pointages"], securite.name))
+                return redirect("login")
+        except sv.SauvegardeInvalide as e:
+            messages.error(request, "Opération refusée : %s." % e)
+        return redirect("sauvegardes")
+    return render(request, "pointages/sauvegardes.html", {
+        "liste": sv.lister(), "dossier": sv.dossier(), "garder": settings.POINTAGE_MAX["SAUVEGARDES_A_GARDER"],
+    })
+
+
+@admin_requis
+def sauvegarde_telecharger(request, nom):
+    from django.http import FileResponse, Http404
+    from . import sauvegardes as sv
+
+    try:
+        chemin = sv.chemin_existant(nom)
+    except sv.SauvegardeInvalide:
+        raise Http404
+    return FileResponse(open(chemin, "rb"), as_attachment=True, filename=chemin.name)
+
+
+# ---------------------------------------------------------------------------
+# Fiches de paie
+# ---------------------------------------------------------------------------
+
+@admin_requis
+def fiche_de_paie(request, pk):
+    from .models import Entreprise
+    from .paie import fiche
+
+    annee, mois = _mois_demande(request)
+    personne = get_object_or_404(Personne.objects.select_related("service", "contrat"), pk=pk)
+    return render(request, "pointages/fiches_de_paie.html", {
+        "fiches": [fiche(personne, annee, mois)], "entreprise": Entreprise.courante(),
+        "mois": "%04d-%02d" % (annee, mois), "personne": personne,
+    })
+
+
+@admin_requis
+def fiches_de_paie(request):
+    from .models import Entreprise
+    from .paie import fiche
+
+    annee, mois = _mois_demande(request)
+    form = LieuForm(request.GET or None)
+    ville = service = None
+    if form.is_valid():
+        ville, service = form.cleaned_data["ville"], form.cleaned_data["service"]
+    lignes = stats.bilan_mensuel(annee, mois, ville=ville, service=service)["lignes"]
+    fiches = [fiche(l["personne"], annee, mois) for l in lignes if l["reel"] > 0]
+    return render(request, "pointages/fiches_de_paie.html", {
+        "fiches": fiches, "entreprise": Entreprise.courante(), "mois": "%04d-%02d" % (annee, mois),
+        "query": request.GET.urlencode(),
+    })
+
+
+def certificat(request):
+    """Certificat racine HTTPS local, à installer sur les téléphones (public, sans secret)."""
+    from django.http import Http404
+
+    chemin = settings.BASE_DIR / "certificat-pointage-max.crt"
+    if not chemin.is_file():
+        raise Http404("HTTPS non installé (bash install.sh --https)")
+    r = HttpResponse(chemin.read_bytes(), content_type="application/x-x509-ca-cert")
+    r["Content-Disposition"] = 'attachment; filename="pointage-max.crt"'
+    return r

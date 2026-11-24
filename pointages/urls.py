@@ -4,6 +4,7 @@ from . import views
 
 urlpatterns = [
     path("", views.accueil, name="accueil"),
+    path("certificat.crt", views.certificat, name="certificat"),
     path("vision-rh/", views.tableau_de_bord, name="tableau_de_bord"),
     path("bilan/", views.bilan, name="bilan"),
     path("journal/", views.journal, name="journal"),
@@ -11,6 +12,12 @@ urlpatterns = [
     path("conges/nouveau/", views.conge_form, name="conge_nouveau"),
     path("conges/<int:pk>/modifier/", views.conge_form, name="conge_modifier"),
     path("conges/<int:pk>/supprimer/", views.conge_supprimer, name="conge_supprimer"),
+    path("parametres/", views.parametres, name="parametres"),
+    path("parametres/entreprise/", views.entreprise, name="entreprise"),
+    path("parametres/sauvegardes/", views.sauvegardes, name="sauvegardes"),
+    path("parametres/sauvegardes/<str:nom>", views.sauvegarde_telecharger, name="sauvegarde_telecharger"),
+    path("bilan/fiches-de-paie/", views.fiches_de_paie, name="fiches_de_paie"),
+    path("employes/<int:pk>/fiche-de-paie/", views.fiche_de_paie, name="fiche_de_paie"),
     path("utilisateurs/", views.utilisateurs, name="utilisateurs"),
     path("utilisateurs/nouveau/", views.utilisateur_form, name="utilisateur_nouveau"),
     path("utilisateurs/<int:pk>/", views.utilisateur_form, name="utilisateur_modifier"),

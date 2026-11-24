@@ -312,3 +312,169 @@ class UtilisateursTests(Base):
         self.assertContains(r, "pas identiques")
         r = self.client.post(reverse("utilisateur_modifier", args=[self.admin.pk]), {"username": "admin", "role": "pointeur"})
         self.assertContains(r, "propres droits")
+
+
+import shutil
+import tempfile
+import zipfile
+from pathlib import Path
+
+from django.test import TransactionTestCase
+
+
+class SauvegardesTests(TransactionTestCase):
+    """TransactionTestCase : la sauvegarde lit la vraie base SQLite de test (fichier)."""
+
+    def setUp(self):
+        from django.conf import settings
+        self.tmp = Path(tempfile.mkdtemp())
+        self.media = self.tmp / "media"
+        (self.media / "photos").mkdir(parents=True)
+        (self.media / "photos" / "a.jpg").write_bytes(b"photo")
+        self.cfg = dict(settings.POINTAGE_MAX, SAUVEGARDES_DIR=str(self.tmp / "sauvegardes"), SAUVEGARDES_A_GARDER=3)
+        self.over = self.settings(POINTAGE_MAX=self.cfg, MEDIA_ROOT=str(self.media))
+        self.over.enable()
+        from django.contrib.auth.models import User
+        self.admin = User.objects.create_superuser("admin", "", "motdepasse-admin")
+        Personne.objects.create(nom="Avant", prenoms="Restauration")
+
+    def tearDown(self):
+        self.over.disable()
+        shutil.rmtree(self.tmp)
+
+    def test_creer_verifier_restaurer(self):
+        from . import sauvegardes as sv
+        chemin = sv.creer("manuelle")
+        infos = sv.verifier(chemin)
+        self.assertEqual((infos["employes"], infos["fichiers"]), (1, 1))
+        # On modifie les données, puis on restaure
+        Personne.objects.create(nom="Apres", prenoms="Coup")
+        (self.media / "photos" / "a.jpg").unlink()
+        (self.media / "nouveau.txt").write_text("x")
+        _, securite = sv.restaurer(chemin)
+        self.assertEqual(list(Personne.objects.values_list("nom", flat=True)), ["Avant"])
+        self.assertTrue((self.media / "photos" / "a.jpg").exists())
+        self.assertFalse((self.media / "nouveau.txt").exists())
+        self.assertEqual(sv.verifier(securite)["employes"], 2)  # l'état d'avant est conservé
+
+    def test_rotation(self):
+        from . import sauvegardes as sv
+        import time
+        for i in range(5):
+            sv.creer("test")
+            time.sleep(1.05)
+        self.assertEqual(len(sv.lister()), 3)
+
+    def test_fichiers_refuses(self):
+        from . import sauvegardes as sv
+        piege = self.tmp / "piege.zip"
+        with zipfile.ZipFile(piege, "w") as z:
+            z.write(sv.creer("x"), "inutile.zip")
+        with self.assertRaises(sv.SauvegardeInvalide):
+            sv.verifier(piege)  # pas de base
+        bonne = sv.creer("y")
+        evasion = self.tmp / "evasion.zip"
+        with zipfile.ZipFile(bonne) as src, zipfile.ZipFile(evasion, "w") as z:
+            z.writestr("db.sqlite3", src.read("db.sqlite3"))
+            z.writestr("media/../../evil.txt", "x")
+        with self.assertRaises(sv.SauvegardeInvalide):
+            sv.verifier(evasion)
+        texte = self.tmp / "faux.zip"
+        texte.write_text("pas un zip")
+        with self.assertRaises(sv.SauvegardeInvalide):
+            sv.verifier(texte)
+        with self.assertRaises(sv.SauvegardeInvalide):
+            sv.chemin_existant("../../etc/passwd")
+
+    def test_pages(self):
+        self.client.force_login(self.admin)
+        r = self.client.post(reverse("sauvegardes"), {"action": "creer"}, follow=True)
+        self.assertContains(r, "Sauvegarde créée")
+        nom = r.context["liste"][0]["nom"]
+        r = self.client.get(reverse("sauvegarde_telecharger", args=[nom]))
+        self.assertEqual(b"".join(r.streaming_content)[:2], b"PK")
+        r = self.client.post(reverse("sauvegardes"), {"action": "restaurer", "nom": nom, "confirmation": "non"}, follow=True)
+        self.assertContains(r, "RESTAURER")
+        r = self.client.post(reverse("sauvegardes"), {"action": "restaurer", "nom": nom, "confirmation": "RESTAURER"})
+        self.assertRedirects(r, reverse("login"))
+
+
+class PaieTests(Base):
+    def test_retenues_indicatives(self):
+        from .paie import retenues
+        r = retenues(Decimal("8623"), self.p)
+        montants = {l["libelle"].split(" ")[0]: l["montant"] for l in r["lignes"]}
+        self.assertEqual(montants["CNSS"], Decimal("268.80"))  # plafonné à 6000 × 4,48 %
+        self.assertEqual(montants["AMO"], Decimal("194.88"))
+        self.assertEqual(r["imposable"], Decimal("6003.57"))
+        self.assertEqual(montants["IR"], Decimal("367.38"))
+        self.assertEqual(r["net"], Decimal("8623.00") - Decimal("268.80") - Decimal("194.88") - Decimal("367.38"))
+        # Petit salaire : pas d'IR
+        self.assertEqual(retenues(Decimal("3000"), self.p)["lignes"][2]["montant"], 0)
+        # Charges de famille : moins d'IR
+        self.p.situation_familiale, self.p.enfants = "marie", 2
+        self.assertLess(retenues(Decimal("8623"), self.p)["lignes"][2]["montant"], Decimal("367.38"))
+
+    def test_pages_paie(self):
+        self.client.force_login(self.admin)
+        Pointage.objects.create(personne=self.p, checkin=aware(2026, 3, 2, 8), checkout=aware(2026, 3, 2, 16))
+        r = self.client.get(reverse("fiche_de_paie", args=[self.p.pk]) + "?mois=2026-03")
+        self.assertContains(r, "Net à payer")
+        r = self.client.get(reverse("fiches_de_paie") + "?mois=2026-03")
+        self.assertEqual(len(r.context["fiches"]), 1)
+        for nom in ("parametres", "entreprise", "sauvegardes"):
+            self.assertEqual(self.client.get(reverse(nom)).status_code, 200)
+        r = self.client.post(reverse("entreprise"), {"raison_sociale": "BTP Atlas", "ice": "001234567000089"})
+        self.assertRedirects(r, reverse("parametres"))
+        self.assertContains(self.client.get(reverse("fiche_de_paie", args=[self.p.pk]) + "?mois=2026-03"), "BTP Atlas")
+        self.client.force_login(self.pointeur)
+        for nom in ("parametres", "sauvegardes", "fiches_de_paie"):
+            self.assertEqual(self.client.get(reverse(nom)).status_code, 403)
+
+
+class VisionJourTests(Base):
+    def test_journee_passee_et_calendrier(self):
+        # Lundi 2 mars 2026 : 1 pointage en retard (service à 08:00, tolérance 10 min), 1 absent, 1 en congé
+        autre = Personne.objects.create(nom="Absent", prenoms="Ali")
+        conge = Personne.objects.create(nom="Vacances", prenoms="Sara")
+        Conge.objects.create(personne=conge, debut=date(2026, 3, 1), fin=date(2026, 3, 5))
+        Pointage.objects.create(personne=self.p, checkin=aware(2026, 3, 2, 8, 25), checkout=aware(2026, 3, 2, 12, 0))
+        Pointage.objects.create(personne=self.p, checkin=aware(2026, 3, 2, 13, 0), checkout=aware(2026, 3, 2, 17, 0))
+        JourFerie.objects.create(date=date(2026, 3, 3), nom="Test férié")
+        j = stats.journee(date(2026, 3, 2))
+        self.assertEqual((j["nb_pointes"], j["nb_attendus"]), (1, 3))
+        self.assertEqual([p.nom for p in j["absents"]], ["Absent"])
+        self.assertEqual(j["retards"][0]["minutes"], 25)
+        self.assertEqual((j["heures"], j["lignes"][0]["passages"]), ("7h35", 2))
+        self.assertEqual(j["ponctualite"], 0)
+        self.assertEqual(stats.journee(date(2026, 3, 3))["nature"], "ferie")
+        # Arrivée « tardive » un jour férié : ce n'est pas un retard
+        Pointage.objects.create(personne=self.p, checkin=aware(2026, 3, 3, 10, 0), checkout=aware(2026, 3, 3, 12, 0))
+        self.assertEqual(stats.journee(date(2026, 3, 3))["retards"], [])
+        self.assertEqual(stats.journee(date(2026, 3, 1))["nature"], "repos")  # dimanche
+
+        semaines = stats.calendrier(2026, 3, date(2026, 3, 2))
+        jours = {c["jour"]: c for s in semaines for c in s if c}
+        self.assertEqual(len(jours), 31)
+        self.assertIsNone(semaines[0][0])  # le 1er mars 2026 est un dimanche
+        c = jours[2]
+        self.assertEqual((c["pointes"], c["retards"], c["absents"], c["conges"], c["choisi"]), (1, 1, 1, 1, True))
+        self.assertEqual(jours[3]["nature"], "ferie")
+        self.assertIsNone(jours[3]["absents"])
+
+    def test_employe_pas_encore_entre_ni_sorti(self):
+        Personne.objects.create(nom="Futur", prenoms="X", date_entree=date(2026, 6, 1))
+        Personne.objects.create(nom="Parti", prenoms="Y", actif=False, date_sortie=date(2026, 2, 1))
+        noms = [p.nom for p in stats.journee(date(2026, 3, 2))["absents"]]
+        self.assertNotIn("Futur", noms)
+        self.assertNotIn("Parti", noms)
+
+    def test_page_navigation(self):
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("tableau_de_bord") + "?jour=2026-03-02")
+        self.assertEqual(r.context["jour"], date(2026, 3, 2))
+        self.assertEqual((r.context["veille"], r.context["lendemain"]), (date(2026, 3, 1), date(2026, 3, 3)))
+        self.assertContains(r, "cal-jour")
+        r = self.client.get(reverse("tableau_de_bord") + "?mois=2026-01")
+        self.assertEqual(r.context["jour"], date(2026, 1, 1))
+        self.assertEqual(self.client.get(reverse("tableau_de_bord") + "?jour=pas-une-date").status_code, 200)

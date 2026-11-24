@@ -1,0 +1,54 @@
+{% extends "pointages/base.html" %}
+{% load static %}
+{% block titre %}Sauvegardes{% endblock %}
+{% block contenu %}
+<div class="entete-page">
+  <div>
+    <h1>Sauvegardes</h1>
+    <p class="sous-titre">Chaque sauvegarde contient la base de données et les photos/documents. Les {{ garder }} plus récentes sont conservées.</p>
+  </div>
+  <form method="post">{% csrf_token %}<button class="bouton" name="action" value="creer">💾 Sauvegarder maintenant</button></form>
+</div>
+
+<div class="alerte warning">
+  <strong>Conseil :</strong> téléchargez régulièrement une sauvegarde et gardez-la <strong>hors de cet appareil</strong>
+  (clé USB, Google Drive…). Si l'appareil tombe en panne, les sauvegardes qu'il contient sont perdues avec lui.
+</div>
+
+<div class="carte tableau-wrap">
+  <h2>Sauvegardes disponibles</h2>
+  <table>
+    <thead><tr><th>Date</th><th>Type</th><th class="num">Taille</th><th></th></tr></thead>
+    <tbody>
+    {% for s in liste %}
+      <tr>
+        <td>{{ s.date|date:"l d/m/Y à H:i" }}</td>
+        <td><span class="etat {% if s.motif == 'auto' %}bleu{% elif s.motif == 'avant-restauration' %}orange{% else %}vert{% endif %}">{% if s.motif == 'auto' %}automatique{% elif s.motif == 'avant-restauration' %}avant restauration{% elif s.motif == 'demarrage' %}au démarrage{% else %}{{ s.motif }}{% endif %}</span></td>
+        <td class="num">{{ s.taille|filesizeformat }}</td>
+        <td class="actions">
+          <a class="bouton petit secondaire" href="{% url 'sauvegarde_telecharger' s.nom %}">⬇ Télécharger</a>
+          <form method="post" class="form-restaurer" data-confirmer-saisie="RESTAURER">{% csrf_token %}
+            <input type="hidden" name="action" value="restaurer"><input type="hidden" name="nom" value="{{ s.nom }}">
+            <input type="hidden" name="confirmation" value="">
+            <button class="bouton petit danger">Restaurer</button>
+          </form>
+        </td>
+      </tr>
+    {% empty %}<tr><td colspan="4" class="vide">Aucune sauvegarde pour l'instant.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <p class="sous-titre" style="margin-top:10px">Dossier : <code>{{ dossier }}</code></p>
+</div>
+
+<div class="carte">
+  <h2>Restaurer depuis un fichier</h2>
+  <p>Remplace <strong>toutes</strong> les données actuelles par celles du fichier. L'état actuel est d'abord sauvegardé automatiquement.</p>
+  <form method="post" enctype="multipart/form-data" class="filtres">{% csrf_token %}
+    <input type="hidden" name="action" value="restaurer">
+    <div><label for="fichier">Fichier de sauvegarde (.zip)</label><input type="file" id="fichier" name="fichier" accept=".zip" required></div>
+    <div><label for="confirmation">Tapez RESTAURER pour confirmer</label><input id="confirmation" name="confirmation" autocomplete="off" required></div>
+    <button class="bouton danger">Restaurer ce fichier</button>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'pointages/confirmer.js' %}"></script>{% endblock %}
