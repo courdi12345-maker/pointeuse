@@ -52,6 +52,11 @@ par votre comptable. Les taux sont regroupés dans `pointeuse/settings.py` (`POI
 
 Les données restent sur votre ordinateur (fichier `db.sqlite3` et dossier `media/`).
 
+## Version en ligne (Internet)
+
+Pour utiliser Pointage Max depuis n'importe où, sans ordinateur allumé au bureau : voir
+**[EN_LIGNE.md](EN_LIGNE.md)** (hébergement Render en quelques clics, environ 7 $ par mois).
+
 ## Installation (Raspberry Pi OS, Debian, Ubuntu)
 
 ```bash

@@ -8,6 +8,9 @@ d'environnement (voir README.md) :
     POINTAGE_HOSTS=192.168.1.20,pointage.local
     POINTAGE_TZ=Africa/Casablanca
     POINTAGE_HTTPS=1            si le site est servi en HTTPS (cookies sécurisés)
+    POINTAGE_DATA_DIR=/data     dossier des données (base, photos, sauvegardes, clé secrète),
+                                à placer sur un disque persistant pour la version en ligne
+    POINTAGE_EN_LIGNE=1         version hébergée sur Internet (sécurité renforcée, voir EN_LIGNE.md)
 """
 
 import os
@@ -15,6 +18,24 @@ import secrets
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Dossier des données propres à l'installation. Par défaut le dossier du logiciel (usage local) ;
+# en ligne, un disque persistant (ex. /data) pour que rien ne soit perdu à chaque mise à jour.
+DATA_DIR = Path(os.environ.get("POINTAGE_DATA_DIR", BASE_DIR))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Les migrations de « pointages » ne sont pas dans Git : elles sont créées sur chaque installation.
+# Quand les données sont sur un disque séparé (version en ligne), on les y range aussi, sinon elles
+# seraient perdues à chaque mise à jour du serveur et la base ne suivrait plus le code.
+MIGRATION_MODULES = {}
+if DATA_DIR.resolve() != BASE_DIR.resolve():
+    import sys
+    _paquet = DATA_DIR / "migrations_pointages"
+    _paquet.mkdir(exist_ok=True)
+    (_paquet / "__init__.py").touch()
+    if str(DATA_DIR) not in sys.path:
+        sys.path.append(str(DATA_DIR))
+    MIGRATION_MODULES["pointages"] = "migrations_pointages"
 
 
 def _env_bool(nom, defaut="0"):
@@ -25,7 +46,7 @@ def _cle_secrete():
     """Clé lue dans l'environnement, sinon dans secret_key.txt (créé au premier lancement, hors Git)."""
     if os.environ.get("POINTAGE_SECRET_KEY"):
         return os.environ["POINTAGE_SECRET_KEY"]
-    fichier = BASE_DIR / "secret_key.txt"
+    fichier = DATA_DIR / "secret_key.txt"
     if not fichier.exists():
         fichier.write_text(secrets.token_urlsafe(50))
         fichier.chmod(0o600)
@@ -34,11 +55,16 @@ def _cle_secrete():
 
 SECRET_KEY = _cle_secrete()
 
-DEBUG = _env_bool("POINTAGE_DEBUG")
+EN_LIGNE = _env_bool("POINTAGE_EN_LIGNE")
+DEBUG = _env_bool("POINTAGE_DEBUG") and not EN_LIGNE
 
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("POINTAGE_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()]
 if os.environ.get("POINTAGE_HOSTS", "") == "*":
     ALLOWED_HOSTS = ["*"]
+# Hébergeurs qui donnent eux-mêmes l'adresse publique du site (Render, Railway).
+for _var in ("RENDER_EXTERNAL_HOSTNAME", "RAILWAY_PUBLIC_DOMAIN"):
+    if os.environ.get(_var) and os.environ[_var] not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(os.environ[_var])
 
 
 # --- Réglages métier ---------------------------------------------------------
@@ -56,7 +82,7 @@ POINTAGE_MAX = {
     "HEURE_DEBUT": os.environ.get("POINTAGE_HEURE_DEBUT", "08:00"),
     "TOLERANCE_RETARD_MINUTES": int(os.environ.get("POINTAGE_TOLERANCE_RETARD", "10")),
     "DELAI_MIN_MINUTES": 1,  # délai minimum entre une arrivée et une sortie
-    "SAUVEGARDES_DIR": os.environ.get("POINTAGE_SAUVEGARDES_DIR", str(BASE_DIR / "sauvegardes")),
+    "SAUVEGARDES_DIR": os.environ.get("POINTAGE_SAUVEGARDES_DIR", str(DATA_DIR / "sauvegardes")),
     "SAUVEGARDES_A_GARDER": int(os.environ.get("POINTAGE_SAUVEGARDES_A_GARDER", "30")),
     # Fiche de paie : retenues salariales (Maroc, barème 2025). Montants INDICATIFS : faites-les valider
     # par votre comptable et mettez ces valeurs à jour à chaque loi de finances.
@@ -87,6 +113,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'pointages.services.SanteMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -123,7 +150,8 @@ WSGI_APPLICATION = 'pointeuse.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': DATA_DIR / 'db.sqlite3',
+        'OPTIONS': {'timeout': 20},
     }
 }
 
@@ -152,7 +180,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = DATA_DIR / 'media'
 FILE_UPLOAD_PERMISSIONS = 0o640
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
@@ -168,8 +196,36 @@ CSRF_COOKIE_HTTPONLY = True
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 
-if _env_bool("POINTAGE_HTTPS"):
+if _env_bool("POINTAGE_HTTPS") or EN_LIGNE:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     CSRF_TRUSTED_ORIGINS = ["https://%s" % h for h in ALLOWED_HOSTS if h != "*"]
+
+if EN_LIGNE:
+    # Le site est sur Internet : HTTPS obligatoire et retenu par le navigateur.
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    # Mots de passe plus solides que pour un usage local.
+    AUTH_PASSWORD_VALIDATORS[1]["OPTIONS"]["min_length"] = 10
+
+# Blocage des connexions après plusieurs échecs (cache partagé entre les processus).
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": str(DATA_DIR / "cache"),
+    }
+}
+CONNEXION_ESSAIS_MAX = int(os.environ.get("POINTAGE_ESSAIS_MAX", "5"))
+CONNEXION_BLOCAGE_MINUTES = int(os.environ.get("POINTAGE_BLOCAGE_MINUTES", "15"))
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {
+        "django": {"handlers": ["console"], "level": "WARNING"},
+        "pointages": {"handlers": ["console"], "level": "INFO"},
+    },
+}

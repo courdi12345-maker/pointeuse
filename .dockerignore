@@ -1,0 +1,13 @@
+.git
+venv
+db.sqlite3
+secret_key.txt
+media
+sauvegardes
+staticfiles
+cache
+migrations_pointages
+pointages/migrations/0*.py
+__pycache__
+*.pyc
+*.zip

@@ -84,3 +84,20 @@ class EntetesSecuriteMiddleware:
         response.setdefault("Referrer-Policy", "same-origin")
         response.setdefault("Permissions-Policy", "camera=(self), microphone=(), geolocation=()")
         return response
+
+
+class SanteMiddleware:
+    """Répond « ok » sur /sante/ si la base répond. Utilisé par l'hébergeur pour savoir si le site
+    tourne ; placé en premier, car ses appels internes n'utilisent ni HTTPS ni l'adresse publique."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.path == "/sante/":
+            from django.db import connection
+            from django.http import HttpResponse
+            with connection.cursor() as c:
+                c.execute("SELECT 1")
+            return HttpResponse("ok", content_type="text/plain")
+        return self.get_response(request)

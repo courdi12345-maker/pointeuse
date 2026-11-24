@@ -478,3 +478,99 @@ class VisionJourTests(Base):
         r = self.client.get(reverse("tableau_de_bord") + "?mois=2026-01")
         self.assertEqual(r.context["jour"], date(2026, 1, 1))
         self.assertEqual(self.client.get(reverse("tableau_de_bord") + "?jour=pas-une-date").status_code, 200)
+
+
+# ---------------------------------------------------------------------------
+# Version en ligne
+# ---------------------------------------------------------------------------
+import os
+from unittest import mock
+
+from django.core.cache import cache
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.test import override_settings
+
+
+@override_settings(CONNEXION_ESSAIS_MAX=3, CONNEXION_BLOCAGE_MINUTES=15,
+                   CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
+class ConnexionEnLigneTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        User.objects.create_user("chef", password="Mot-de-passe-solide-42")
+
+    def _essai(self, mdp, ip="10.0.0.1"):
+        return self.client.post(reverse("login"), {"username": "chef", "password": mdp}, REMOTE_ADDR=ip)
+
+    def test_blocage_apres_echecs_puis_deblocage_autre_ip(self):
+        for _ in range(3):
+            r = self._essai("faux")
+            self.assertContains(r, "Identifiant ou mot de passe incorrect")
+        # Même le bon mot de passe est refusé tant que l'adresse est bloquée.
+        r = self._essai("Mot-de-passe-solide-42")
+        self.assertContains(r, "Trop d&#x27;essais incorrects")
+        self.assertNotIn("_auth_user_id", self.client.session)
+        # Une autre adresse n'est pas touchée.
+        r = self._essai("Mot-de-passe-solide-42", ip="10.0.0.2")
+        self.assertEqual(r.status_code, 302)
+
+    def test_succes_remet_le_compteur_a_zero(self):
+        self._essai("faux"); self._essai("faux")
+        self.assertEqual(self._essai("Mot-de-passe-solide-42").status_code, 302)
+        self.client.logout()
+        self._essai("faux"); self._essai("faux")
+        self.assertEqual(self._essai("Mot-de-passe-solide-42").status_code, 302)
+
+    def test_x_forwarded_for_ignore_en_local(self):
+        for i in range(3):
+            self.client.post(reverse("login"), {"username": "chef", "password": "faux"},
+                             REMOTE_ADDR="10.0.0.9", HTTP_X_FORWARDED_FOR="1.2.3.%d" % i)
+        r = self._essai("Mot-de-passe-solide-42", ip="10.0.0.9")
+        self.assertContains(r, "Trop d&#x27;essais incorrects")
+
+    @override_settings(EN_LIGNE=True)
+    def test_x_forwarded_for_utilise_en_ligne(self):
+        for _ in range(3):
+            self.client.post(reverse("login"), {"username": "chef", "password": "faux"},
+                             REMOTE_ADDR="10.0.0.9", HTTP_X_FORWARDED_FOR="41.1.1.1, 10.0.0.9")
+        r = self.client.post(reverse("login"), {"username": "chef", "password": "Mot-de-passe-solide-42"},
+                             REMOTE_ADDR="10.0.0.9", HTTP_X_FORWARDED_FOR="41.2.2.2")
+        self.assertEqual(r.status_code, 302)
+
+
+class SanteTests(TestCase):
+    def test_sante_sans_connexion_et_hote_inconnu(self):
+        r = self.client.get("/sante/", HTTP_HOST="10.1.2.3:10000")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.content, b"ok")
+
+
+class PremierDemarrageTests(TestCase):
+    def test_local_cree_admin123(self):
+        with mock.patch.dict(os.environ, {"POINTAGE_ADMIN_PASSWORD": ""}):
+            call_command("premier_demarrage", stdout=open(os.devnull, "w"))
+        self.assertTrue(User.objects.get(username="admin").check_password("admin123"))
+
+    @override_settings(EN_LIGNE=True)
+    def test_en_ligne_exige_un_mot_de_passe(self):
+        with mock.patch.dict(os.environ, {"POINTAGE_ADMIN_PASSWORD": ""}):
+            with self.assertRaises(CommandError):
+                call_command("premier_demarrage")
+        self.assertFalse(User.objects.exists())
+
+    @override_settings(EN_LIGNE=True)
+    def test_en_ligne_refuse_un_mot_de_passe_faible(self):
+        with mock.patch.dict(os.environ, {"POINTAGE_ADMIN_PASSWORD": "admin123"}):
+            with self.assertRaises(CommandError):
+                call_command("premier_demarrage")
+
+    @override_settings(EN_LIGNE=True)
+    def test_en_ligne_cree_le_compte_choisi(self):
+        with mock.patch.dict(os.environ, {"POINTAGE_ADMIN_USER": "simo", "POINTAGE_ADMIN_PASSWORD": "Safi-Jorf-2026!"}):
+            call_command("premier_demarrage", stdout=open(os.devnull, "w"))
+        u = User.objects.get(username="simo")
+        self.assertTrue(u.is_superuser and u.check_password("Safi-Jorf-2026!"))
+        # Ne recrée rien au démarrage suivant.
+        with mock.patch.dict(os.environ, {"POINTAGE_ADMIN_PASSWORD": "Autre-mot-de-passe-1"}):
+            call_command("premier_demarrage")
+        self.assertEqual(User.objects.count(), 1)

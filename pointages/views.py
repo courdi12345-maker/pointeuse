@@ -694,3 +694,4 @@ def certificat(request):
     r = HttpResponse(chemin.read_bytes(), content_type="application/x-x509-ca-cert")
     r["Content-Disposition"] = 'attachment; filename="pointage-max.crt"'
     return r
+
